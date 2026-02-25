@@ -1,0 +1,101 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.jetbrains.kotlin.android)
+    alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.jetbrains.kotlin.kapt)
+}
+
+android {
+    namespace = "com.example.tesisv3"
+    compileSdk = 36
+
+
+    defaultConfig {
+        applicationId = "com.example.tesisv3"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildFeatures {
+        viewBinding = true
+        compose = true
+    }
+
+    buildTypes {
+        debug {
+            isDebuggable = true
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+        release {
+            isDebuggable = false
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlin {
+        compilerOptions {
+            jvmTarget = JvmTarget.JVM_17
+        }
+    }
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.15"
+    }
+
+    packaging {
+        jniLibs {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+}
+
+dependencies {
+    implementation(files("libs/samsung-health-sensor-api-1.4.1.aar"))
+    implementation("com.google.code.gson:gson:2.10.1")
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.legacy.legacysupport)
+    implementation(libs.jetbrains.kotlinx.couroutine)
+    implementation(libs.coil.kt)
+    implementation(libs.jetbrains.kotlin.stdlib)
+    implementation(libs.google.android.material)
+    implementation(libs.androidx.constraintlayout)
+    testImplementation(libs.junit)
+    implementation(libs.glide)
+    annotationProcessor(libs.glide.compiler)
+    androidTestImplementation(libs.androidx.espresso.core)
+    implementation(libs.androidx.cardview)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material3.windowsize)
+    implementation(libs.androidx.compose.material3.windowsize)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.activity.compose)
+    androidTestImplementation(libs.androidx.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.core.core.splashscreen)
+    implementation(libs.androidx.compose.material.material.icons)
+    implementation(libs.google.accompanist.accompanist)
+    implementation(libs.playservices.wearable)
+    implementation(libs.androidx.recyclerview)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.wear)
+    compileOnly(libs.google.android.wearable)
+    implementation(libs.google.android.support.wearable)
+}
