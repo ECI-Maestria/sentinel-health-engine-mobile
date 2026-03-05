@@ -13,12 +13,8 @@ import android.view.WindowInsets
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updatePadding
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.*
-import com.google.android.gms.wearable.R
 import com.example.tesisv3.databinding.ActivityMainBinding
 import com.google.android.material.color.DynamicColors
 import kotlinx.coroutines.*
