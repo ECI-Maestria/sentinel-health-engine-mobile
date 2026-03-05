@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.health.connect.HealthPermissions
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -13,6 +14,7 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.wear.ambient.AmbientModeSupport
 import com.example.tesisv3.databinding.ActivityMainBinding
 import com.example.tesisv3.device.listeners.EcgListener
@@ -37,8 +39,7 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
     private lateinit var binding: ActivityMainBinding
     private lateinit var ambientController: AmbientModeSupport.AmbientController
 
-    // --- Variables de Comunicación ---
-    private val TAG = "MainActivityWear"
+    private val TAG = "MainActivity"
     private val APP_OPEN_WEARABLE_PAYLOAD_PATH = "/APP_OPEN_WEARABLE_PAYLOAD"
     private val WEAR_DATA_PATH = "/wear/json"
     private val MESSAGE_ITEM_RECEIVED_PATH = "/message-item-received"
@@ -46,23 +47,23 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
     private var mobileDeviceConnected: Boolean = false
     private var mobileNodeUri: String? = null
 
-    // --- Variables de Sensores ---
-    private val permissionGranted = AtomicBoolean(false)
     private var connectionManager: ConnectionManager? = null
     private var heartRateListener: HeartRateListener? = null
     private var spO2Listener: SpO2Listener? = null
     private var ecgListener: EcgListener? = null
+    private var connected = false
+    private var permissionGranted = false
 
-    // ----------------------------------------------------------------------------------
-    //  OBSERVER DE SENSORES
-    // ----------------------------------------------------------------------------------
     private val trackerDataObserver = object : TrackerDataObserver {
         override fun onHeartRateTrackerDataChanged(hrData: HeartRateData) {
             runOnUiThread {
                 if (hrData.status == HeartRateStatus.HR_STATUS_FIND_HR) {
                     val hrValue = hrData.hr
+                    binding.txtHeartRate.text = hrValue.toString()
                     binding.messagelogTextView.append("\nHR: $hrValue bpm")
                     sendSensorDataToPhone("heart_rate", hrValue)
+                } else {
+                    binding.txtHeartRate.text = "--"
                 }
             }
         }
@@ -97,19 +98,16 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
         }
     }
 
-    // ----------------------------------------------------------------------------------
-    //  OBSERVER DE CONEXIÓN A SAMSUNG HEALTH SDK
-    // ----------------------------------------------------------------------------------
     private val connectionObserver = object : ConnectionObserver {
         override fun onConnectionResult(stringResourceId: Int) {
             runOnUiThread {
                 Toast.makeText(applicationContext, getString(stringResourceId), Toast.LENGTH_SHORT).show()
             }
             if (stringResourceId != R.string.ConnectedToHs) {
-                finish()
                 return
             }
 
+            connected = true
             heartRateListener = HeartRateListener(applicationContext)
             connectionManager?.initHeartRate(heartRateListener)
             heartRateListener?.startTracker()
@@ -121,22 +119,15 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
             connectionManager?.initEcg(ecgListener)
 
             TrackerDataNotifier.getInstance().addObserver(trackerDataObserver)
-            
-            // Notificar al teléfono proactivamente al conectar los sensores
             discoverAndNotifyMobileDevice()
         }
 
         override fun onError(e: HealthTrackerException) {
             runOnUiThread {
-                Toast.makeText(applicationContext, getString(R.string.ConnectionError), Toast.LENGTH_LONG).show()
+                Toast.makeText(applicationContext, "Health error", Toast.LENGTH_LONG).show()
             }
-            finish()
         }
     }
-
-    // ==================================================================================
-    //  LIFECYCLE METHODS
-    // ==================================================================================
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -147,53 +138,104 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         ambientController = AmbientModeSupport.attach(this)
 
-        // Listeners de sensores
         binding.startSpo2Button.setOnClickListener {
+            if (isPermissionsOrConnectionInvalid()) return@setOnClickListener
             spO2Listener?.let {
                 it.startTracker()
                 binding.startSpo2Button.text = "..."
-                binding.messagelogTextView.append("\nIniciando medición SpO2...")
+                binding.messagelogTextView.append("\nStarting SpO2...")
             }
         }
 
         binding.startEcgButton.setOnClickListener {
+            if (isPermissionsOrConnectionInvalid()) return@setOnClickListener
             ecgListener?.let {
                 it.startTracker()
                 binding.startEcgButton.text = "..."
-                binding.messagelogTextView.append("\nIniciando medición ECG...")
+                binding.messagelogTextView.append("\nStarting ECG...")
             }
         }
 
-        // Listener manual
         binding.sendmessageButton.setOnClickListener {
             val messageText = binding.messagecontentEditText.text.toString()
             if (messageText.isNotEmpty()) {
                 sendManualMessageToPhone(messageText)
                 binding.messagecontentEditText.setText("")
-            } else {
-                Toast.makeText(this, "Message is empty", Toast.LENGTH_SHORT).show()
             }
         }
 
+        createConnectionManager()
+        TrackerDataNotifier.getInstance().addObserver(trackerDataObserver)
+        
         if (!isPermissionGranted()) {
             requestPermissions()
+        }
+    }
+
+    private fun isPermissionsOrConnectionInvalid(): Boolean {
+        if (!isPermissionGranted()) {
+            requestPermissions()
+            return true
+        }
+        if (!connected) {
+            Toast.makeText(applicationContext, "Not connected to HS", Toast.LENGTH_SHORT).show()
+            return true
+        }
+        return false
+    }
+
+    private fun isPermissionGranted(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+            (ActivityCompat.checkSelfPermission(this, HealthPermissions.READ_HEART_RATE) == PackageManager.PERMISSION_GRANTED
+                    && ActivityCompat.checkSelfPermission(this, HealthPermissions.READ_OXYGEN_SATURATION) == PackageManager.PERMISSION_GRANTED)
         } else {
-            createConnectionManager()
+            (ActivityCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED)
+        }
+    }
+
+    private fun requestPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+            ActivityCompat.requestPermissions(this, arrayOf(HealthPermissions.READ_HEART_RATE, HealthPermissions.READ_OXYGEN_SATURATION), 0)
+        } else {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.BODY_SENSORS), 0)
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 0) {
+            permissionGranted = true
+            for (i in grantResults.indices) {
+                if (grantResults[i] == PackageManager.PERMISSION_DENIED) {
+                    permissionGranted = false
+                    Toast.makeText(this, "Permission denied", Toast.LENGTH_SHORT).show()
+                    break
+                }
+            }
+            if (permissionGranted) {
+                createConnectionManager()
+            }
+        }
+    }
+
+    private fun createConnectionManager() {
+        try {
+            connectionManager = ConnectionManager(connectionObserver)
+            connectionManager?.connect(applicationContext)
+        } catch (t: Throwable) {
+            Log.e(TAG, t.message ?: "Error")
         }
     }
 
     override fun onResume() {
         super.onResume()
+        permissionGranted = isPermissionGranted()
         try {
             Wearable.getDataClient(this).addListener(this)
             Wearable.getMessageClient(this).addListener(this)
-            Wearable.getCapabilityClient(this)
-                .addListener(this, Uri.parse("wear://"), CapabilityClient.FILTER_REACHABLE)
-            
+            Wearable.getCapabilityClient(this).addListener(this, Uri.parse("wear://"), CapabilityClient.FILTER_REACHABLE)
             discoverAndNotifyMobileDevice()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        } catch (e: Exception) { e.printStackTrace() }
     }
 
     override fun onPause() {
@@ -216,23 +258,14 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
         connectionManager?.disconnect()
     }
 
-    // ==================================================================================
-    //  COMUNICACIÓN
-    // ==================================================================================
-
     private fun discoverAndNotifyMobileDevice() {
         Wearable.getNodeClient(this).connectedNodes.addOnSuccessListener { nodes ->
             for (node in nodes) {
                 mobileNodeUri = node.id
                 mobileDeviceConnected = true
-                
-                // Enviar señal de vida al teléfono
                 val payload = wearableAppCheckPayloadReturnACK.toByteArray()
                 Wearable.getMessageClient(this).sendMessage(node.id, APP_OPEN_WEARABLE_PAYLOAD_PATH, payload)
-                
-                runOnUiThread {
-                    binding.deviceconnectionStatusTv.text = "Mobile device connected: ${node.displayName}"
-                }
+                runOnUiThread { binding.deviceconnectionStatusTv.text = "Connected: ${node.displayName}" }
                 break
             }
         }
@@ -240,87 +273,30 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
 
     private fun sendSensorDataToPhone(dataType: String, value: Any) {
         if (!mobileDeviceConnected || mobileNodeUri == null) return
-
-        val data = mapOf(
-            "type" to dataType,
-            "value" to value.toString(),
-            "timestamp" to System.currentTimeMillis()
-        )
+        val data = mapOf("type" to dataType, "value" to value.toString(), "timestamp" to System.currentTimeMillis())
         val json = Gson().toJson(data)
-
-        Wearable.getMessageClient(this)
-            .sendMessage(mobileNodeUri!!, WEAR_DATA_PATH, json.toByteArray(StandardCharsets.UTF_8))
-            .addOnSuccessListener { Log.d(TAG, "Sent $dataType: $json") }
+        Wearable.getMessageClient(this).sendMessage(mobileNodeUri!!, WEAR_DATA_PATH, json.toByteArray(StandardCharsets.UTF_8))
     }
 
     private fun sendManualMessageToPhone(text: String) {
-        if (!mobileDeviceConnected || mobileNodeUri == null) {
-            Toast.makeText(this, "Phone not connected", Toast.LENGTH_SHORT).show()
-            return
-        }
-
+        if (!mobileDeviceConnected || mobileNodeUri == null) return
         val payload = text.toByteArray(StandardCharsets.UTF_8)
-        Wearable.getMessageClient(this)
-            .sendMessage(mobileNodeUri!!, MESSAGE_ITEM_RECEIVED_PATH, payload)
-            .addOnSuccessListener {
-                binding.messagelogTextView.append("\nSent manual: $text")
-            }
-            .addOnFailureListener {
-                Toast.makeText(this, "Failed to send", Toast.LENGTH_SHORT).show()
-            }
+        Wearable.getMessageClient(this).sendMessage(mobileNodeUri!!, MESSAGE_ITEM_RECEIVED_PATH, payload)
+            .addOnSuccessListener { binding.messagelogTextView.append("\nSent manual: $text") }
     }
 
-    @SuppressLint("SetTextI18n")
     override fun onMessageReceived(event: MessageEvent) {
         if (event.path == APP_OPEN_WEARABLE_PAYLOAD_PATH) {
             mobileNodeUri = event.sourceNodeId
             mobileDeviceConnected = true
-            
-            // Responder al ACK del teléfono
             val payload = wearableAppCheckPayloadReturnACK.toByteArray()
             Wearable.getMessageClient(this).sendMessage(event.sourceNodeId, APP_OPEN_WEARABLE_PAYLOAD_PATH, payload)
-            
-            runOnUiThread {
-                binding.deviceconnectionStatusTv.text = "Mobile device connected"
-            }
+            runOnUiThread { binding.deviceconnectionStatusTv.text = "Mobile connected" }
         }
     }
 
-    override fun onCapabilityChanged(capabilityInfo: CapabilityInfo) {
-        discoverAndNotifyMobileDevice()
-    }
-
+    override fun onCapabilityChanged(capabilityInfo: CapabilityInfo) { discoverAndNotifyMobileDevice() }
     override fun onDataChanged(p0: DataEventBuffer) {}
-
-    // --- Otros métodos (Permisos, etc.) sin cambios ---
-    private fun isPermissionGranted(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ActivityCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED
-        } else true
-    }
-
-    private fun requestPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requestPermissions(arrayOf(Manifest.permission.BODY_SENSORS), 0)
-        }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            createConnectionManager()
-        } else finish()
-    }
-
-    private fun createConnectionManager() {
-        try {
-            connectionManager = ConnectionManager(connectionObserver)
-            connectionManager?.connect(this)
-        } catch (t: Throwable) {
-            Log.e(TAG, "ConnectionManager error", t)
-        }
-    }
-
     override fun getAmbientCallback(): AmbientModeSupport.AmbientCallback = MyAmbientCallback()
     private inner class MyAmbientCallback : AmbientModeSupport.AmbientCallback()
 }

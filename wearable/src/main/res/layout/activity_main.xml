@@ -20,15 +20,24 @@
             android:orientation="vertical"
             tools:context=".activities.MainActivity">
 
+            <!-- Nuevo TextView para el Ritmo Cardíaco -->
+            <TextView
+                android:id="@+id/txtHeartRate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="0"
+                android:textColor="@android:color/holo_red_light"
+                android:textSize="34sp"
+                android:textStyle="bold" />
+
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:text="@string/message_log"
+                android:text="BPM"
                 android:textColor="?TextInfoColor"
-                android:textSize="11sp"
-                android:textStyle="bold"
-                tools:ignore="SmallSp" />
+                android:textSize="10sp" />
 
             <ScrollView
                 android:id="@+id/scrollviewTextMessageLog"
@@ -88,6 +97,7 @@
                     android:maxLines="1"
                     android:textSize="11sp"
                     tools:ignore="SmallSp" />
+
             </com.google.android.material.textfield.TextInputLayout>
 
             <Button
