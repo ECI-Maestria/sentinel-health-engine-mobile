@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-permission android:name="com.samsung.android.wear.permission.ECG" />
+    <uses-permission android:name="com.samsung.android.hardware.sensormanager.permission.READ_ADDITIONAL_HEALTH_DATA" />
 
 
     <uses-feature android:name="android.hardware.type.watch" />

@@ -46,6 +46,9 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
     private lateinit var binding: ActivityMainBinding
     private lateinit var ambientController: AmbientModeSupport.AmbientController
 
+    private val readAdditionalHealthDataPermission =
+        "com.samsung.android.hardware.sensormanager.permission.READ_ADDITIONAL_HEALTH_DATA"
+
     private val tag = "MainActivity"
     private val appOpenWearablePayloadPath = "/APP_OPEN_WEARABLE_PAYLOAD"
     private val wearDataPath = "/wear/json"
@@ -235,11 +238,13 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
     private fun isPermissionGranted(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
             ActivityCompat.checkSelfPermission(this, HealthPermissions.READ_HEART_RATE) == PackageManager.PERMISSION_GRANTED &&
-                    ActivityCompat.checkSelfPermission(this, HealthPermissions.READ_OXYGEN_SATURATION) == PackageManager.PERMISSION_GRANTED
+                    ActivityCompat.checkSelfPermission(this, HealthPermissions.READ_OXYGEN_SATURATION) == PackageManager.PERMISSION_GRANTED &&
+                    ActivityCompat.checkSelfPermission(this, readAdditionalHealthDataPermission) == PackageManager.PERMISSION_GRANTED
         } else {
             ActivityCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED
         }
     }
+
 
     private fun requestPermissionsCompat() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
@@ -247,7 +252,8 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
                 this,
                 arrayOf(
                     HealthPermissions.READ_HEART_RATE,
-                    HealthPermissions.READ_OXYGEN_SATURATION
+                    HealthPermissions.READ_OXYGEN_SATURATION,
+                    readAdditionalHealthDataPermission
                 ),
                 0
             )
@@ -259,6 +265,7 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
             )
         }
     }
+
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
