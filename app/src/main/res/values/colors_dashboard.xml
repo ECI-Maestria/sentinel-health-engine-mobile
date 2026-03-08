@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="dashboard_bg">#F5F6F1</color>
+    <color name="dashboard_surface">#FFFFFF</color>
+    <color name="dashboard_card">#DDF1E7</color>
+    <color name="dashboard_text">#334739</color>
+    <color name="dashboard_muted">#7A8B80</color>
+    <color name="dashboard_outline">#D9DED5</color>
+    <color name="dashboard_chip">#5CC98F</color>
+    <color name="dashboard_chip_text">#FFFFFF</color>
+    <color name="dashboard_accent_green">#61D2A2</color>
+    <color name="dashboard_accent_blue">#6DA9E6</color>
+    <color name="dashboard_nav">#5A765E</color>
+</resources>
