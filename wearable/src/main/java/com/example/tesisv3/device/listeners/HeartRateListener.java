@@ -44,7 +44,6 @@ public class HeartRateListener extends BaseListener {
         final HealthTracker.TrackerEventListener trackerEventListener = new HealthTracker.TrackerEventListener() {
             @Override
             public void onDataReceived(@NonNull List<DataPoint> list) {
-                sendData(context, "{ \"test\": \"hola\" }");
                 for (DataPoint dataPoint : list) {
                     readValuesFromDataPoint(dataPoint);
                 }

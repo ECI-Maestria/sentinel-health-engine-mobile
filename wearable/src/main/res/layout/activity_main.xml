@@ -8,31 +8,30 @@
     android:padding="9dp"
     tools:deviceIds="wear">
 
-    <FrameLayout
+    <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         app:layout_box="all"
-        tools:ignore="MissingPrefix">
+        android:fillViewport="true">
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="vertical"
             tools:context=".activities.MainActivity">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center">
+                android:gravity="center"
+                android:orientation="vertical">
 
-                <!-- Ritmo Cardíaco -->
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
+                    android:layout_marginBottom="6dp"
                     android:gravity="center"
-                    android:layout_marginBottom="6dp">
+                    android:orientation="vertical">
 
                     <TextView
                         android:id="@+id/txtHeartRate"
@@ -47,16 +46,15 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="BPM"
-                        android:textSize="8sp"/>
+                        android:textSize="8sp" />
                 </LinearLayout>
 
-                <!-- SpO2 -->
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
+                    android:layout_marginBottom="6dp"
                     android:gravity="center"
-                    android:layout_marginBottom="6dp">
+                    android:orientation="vertical">
 
                     <TextView
                         android:id="@+id/txtSpO2"
@@ -71,15 +69,14 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="SpO2 %"
-                        android:textSize="8sp"/>
+                        android:textSize="8sp" />
                 </LinearLayout>
 
-                <!-- ECG -->
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:gravity="center">
+                    android:gravity="center"
+                    android:orientation="vertical">
 
                     <TextView
                         android:id="@+id/txtEcg"
@@ -94,34 +91,25 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="ECG"
-                        android:textSize="8sp"/>
+                        android:textSize="8sp" />
                 </LinearLayout>
-
             </LinearLayout>
 
-            <ScrollView
-                android:id="@+id/scrollviewTextMessageLog"
+            <TextView
+                android:id="@+id/messagelogTextView"
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:paddingBottom="4dp"
-                android:scrollbars="vertical">
-
-                <TextView
-                    android:id="@+id/messagelogTextView"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingStart="9dp"
-                    android:paddingEnd="9dp"
-                    android:scrollbars="vertical"
-                    android:text="@string/init"
-                    android:textColor="?TextViewHeaderColor"
-                    android:textSize="12sp" />
-            </ScrollView>
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:paddingStart="9dp"
+                android:paddingEnd="9dp"
+                android:text="@string/init"
+                android:textColor="?TextViewHeaderColor"
+                android:textSize="12sp" />
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
                 android:gravity="center"
                 android:orientation="horizontal">
 
@@ -138,10 +126,8 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="ECG" />
-
             </LinearLayout>
 
-            <!-- Campo de texto para envío manual -->
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/textInputLayout"
                 android:layout_width="match_parent"
@@ -157,7 +143,6 @@
                     android:maxLines="1"
                     android:textSize="11sp"
                     tools:ignore="SmallSp" />
-
             </com.google.android.material.textfield.TextInputLayout>
 
             <Button
@@ -173,14 +158,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:scrollbars="vertical"
                 android:text="@string/mobile_device_is_connected"
                 android:textColor="?TextViewHeaderColor"
                 android:textSize="10sp"
                 android:visibility="visible"
                 tools:ignore="SmallSp" />
-
         </LinearLayout>
-
-    </FrameLayout>
+    </ScrollView>
 </androidx.wear.widget.BoxInsetLayout>

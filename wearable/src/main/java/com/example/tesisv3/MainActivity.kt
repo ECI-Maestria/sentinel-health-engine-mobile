@@ -52,6 +52,7 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
     private val tag = "MainActivity"
     private val appOpenWearablePayloadPath = "/APP_OPEN_WEARABLE_PAYLOAD"
     private val wearDataPath = "/wear/json"
+    //private val messageItemReceivedPath = "/wear/json"
     private val messageItemReceivedPath = "/message-item-received"
     private val wearableAppCheckPayloadReturnACK = "AppOpenWearableACK"
 

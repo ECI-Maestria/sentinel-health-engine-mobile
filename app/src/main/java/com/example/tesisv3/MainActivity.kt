@@ -2,6 +2,7 @@ package com.example.tesisv3
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Intent
 import android.content.Context
 import android.content.res.Configuration
 import android.net.Uri
@@ -34,6 +35,8 @@ class MainActivity : AppCompatActivity(), CoroutineScope by MainScope(),
     private val APP_OPEN_WEARABLE_PAYLOAD_PATH = "/APP_OPEN_WEARABLE_PAYLOAD"
 
     private val MESSAGE_ITEM_RECEIVED_PATH: String = "/message-item-received"
+    private val WEAR_DATA_PATH = "/wear/json"
+
 
     private val TAG_GET_NODES: String = "getnodes1"
     private val TAG_MESSAGE_RECEIVED: String = "receive1"
@@ -83,12 +86,13 @@ class MainActivity : AppCompatActivity(), CoroutineScope by MainScope(),
         binding.checkwearablesButton.setOnClickListener {
             if (!wearableDeviceConnected) {
                 val tempAct: Activity = activityContext as MainActivity
-                //Couroutine
                 initialiseDevicePairing(tempAct)
             }
         }
 
-
+        binding.openDashboardButton.setOnClickListener {
+            startActivity(Intent(this, DashboardActivity::class.java))
+        }
 
         binding.sendmessageButton.setOnClickListener {
             if (wearableDeviceConnected) {
@@ -281,55 +285,55 @@ class MainActivity : AppCompatActivity(), CoroutineScope by MainScope(),
     @SuppressLint("SetTextI18n")
     override fun onMessageReceived(p0: MessageEvent) {
         try {
-            val s =
-                String(p0.data, StandardCharsets.UTF_8)
+            val s = String(p0.data, StandardCharsets.UTF_8)
             val messageEventPath: String = p0.path
+
             Log.d(
                 TAG_MESSAGE_RECEIVED,
-                "onMessageReceived() Received a message from watch:"
-                        + p0.requestId
-                        + " "
-                        + messageEventPath
-                        + " "
-                        + s
+                "onMessageReceived() Received a message from watch:" +
+                        p0.requestId + " " + messageEventPath + " " + s
             )
+
             if (messageEventPath == APP_OPEN_WEARABLE_PAYLOAD_PATH) {
                 currentAckFromWearForAppOpenCheck = s
-                Log.d(
-                    TAG_MESSAGE_RECEIVED,
-                    "Received acknowledgement message that app is open in wear"
-                )
 
                 val sbTemp = StringBuilder()
                 sbTemp.append(binding.messagelogTextView.text.toString())
                 sbTemp.append("\nWearable device connected.")
-                Log.d("receive1", " $sbTemp")
                 binding.messagelogTextView.text = sbTemp
                 binding.textInputLayout.visibility = View.VISIBLE
 
                 binding.checkwearablesButton.visibility = View.GONE
                 messageEvent = p0
                 wearableNodeUri = p0.sourceNodeId
-            } else if (messageEventPath.isNotEmpty() && messageEventPath == MESSAGE_ITEM_RECEIVED_PATH) {
 
-                try {
-                    binding.messagelogTextView.visibility = View.VISIBLE
-                    binding.textInputLayout.visibility = View.VISIBLE
-                    binding.sendmessageButton.visibility = View.VISIBLE
+            } else if (messageEventPath == MESSAGE_ITEM_RECEIVED_PATH) {
+                binding.messagelogTextView.visibility = View.VISIBLE
+                binding.textInputLayout.visibility = View.VISIBLE
+                binding.sendmessageButton.visibility = View.VISIBLE
 
-                    val sbTemp = StringBuilder()
-                    sbTemp.append("\n")
-                    sbTemp.append(s)
-                    sbTemp.append(" - (Received from wearable)")
-                    Log.d("receive1", " $sbTemp")
-                    binding.messagelogTextView.append(sbTemp)
+                val sbTemp = StringBuilder()
+                sbTemp.append("\n")
+                sbTemp.append(s)
+                sbTemp.append(" - (Received from wearable)")
+                binding.messagelogTextView.append(sbTemp)
 
-                    binding.scrollviewText.requestFocus()
-                    binding.scrollviewText.post {
-                        binding.scrollviewText.scrollTo(0, binding.scrollviewText.bottom)
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                binding.scrollviewText.requestFocus()
+                binding.scrollviewText.post {
+                    binding.scrollviewText.scrollTo(0, binding.scrollviewText.bottom)
+                }
+
+            } else if (messageEventPath == WEAR_DATA_PATH) {
+                binding.messagelogTextView.visibility = View.VISIBLE
+
+                val sbTemp = StringBuilder()
+                sbTemp.append("\nSensor data: ")
+                sbTemp.append(s)
+                binding.messagelogTextView.append(sbTemp)
+
+                binding.scrollviewText.requestFocus()
+                binding.scrollviewText.post {
+                    binding.scrollviewText.scrollTo(0, binding.scrollviewText.bottom)
                 }
             }
         } catch (e: Exception) {
@@ -366,3 +370,5 @@ class MainActivity : AppCompatActivity(), CoroutineScope by MainScope(),
         }
     }
 }
+
+
