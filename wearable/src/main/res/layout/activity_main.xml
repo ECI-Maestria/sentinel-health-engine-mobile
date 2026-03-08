@@ -20,24 +20,84 @@
             android:orientation="vertical"
             tools:context=".activities.MainActivity">
 
-            <!-- Nuevo TextView para el Ritmo Cardíaco -->
-            <TextView
-                android:id="@+id/txtHeartRate"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center"
-                android:text="0"
-                android:textColor="@android:color/holo_red_light"
-                android:textSize="34sp"
-                android:textStyle="bold" />
+                android:orientation="vertical"
+                android:gravity="center">
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:text="BPM"
-                android:textColor="?TextInfoColor"
-                android:textSize="10sp" />
+                <!-- Ritmo Cardíaco -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:layout_marginBottom="6dp">
+
+                    <TextView
+                        android:id="@+id/txtHeartRate"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0"
+                        android:textColor="@android:color/holo_red_light"
+                        android:textSize="24sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="BPM"
+                        android:textSize="8sp"/>
+                </LinearLayout>
+
+                <!-- SpO2 -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:layout_marginBottom="6dp">
+
+                    <TextView
+                        android:id="@+id/txtSpO2"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0"
+                        android:textColor="@android:color/holo_blue_light"
+                        android:textSize="24sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="SpO2 %"
+                        android:textSize="8sp"/>
+                </LinearLayout>
+
+                <!-- ECG -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center">
+
+                    <TextView
+                        android:id="@+id/txtEcg"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="--"
+                        android:textColor="@android:color/holo_green_light"
+                        android:textSize="20sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="ECG"
+                        android:textSize="8sp"/>
+                </LinearLayout>
+
+            </LinearLayout>
 
             <ScrollView
                 android:id="@+id/scrollviewTextMessageLog"

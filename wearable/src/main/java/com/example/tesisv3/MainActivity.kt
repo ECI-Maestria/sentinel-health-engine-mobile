@@ -1,7 +1,6 @@
 package com.example.tesisv3
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.health.connect.HealthPermissions
@@ -9,12 +8,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import android.view.View
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.wear.ambient.AmbientModeSupport
 import com.example.tesisv3.databinding.ActivityMainBinding
 import com.example.tesisv3.device.listeners.EcgListener
@@ -22,13 +19,23 @@ import com.example.tesisv3.device.listeners.HeartRateListener
 import com.example.tesisv3.device.listeners.SpO2Listener
 import com.example.tesisv3.device.managers.ConnectionManager
 import com.example.tesisv3.device.managers.ConnectionObserver
-import com.example.tesisv3.domain.entities.*
-import com.google.android.gms.wearable.*
+import com.example.tesisv3.domain.entities.EcgData
+import com.example.tesisv3.domain.entities.HeartRateData
+import com.example.tesisv3.domain.entities.HeartRateStatus
+import com.example.tesisv3.domain.entities.SpO2Status
+import com.example.tesisv3.domain.entities.TrackerDataNotifier
+import com.example.tesisv3.domain.entities.TrackerDataObserver
+import com.google.android.gms.wearable.CapabilityClient
+import com.google.android.gms.wearable.CapabilityInfo
+import com.google.android.gms.wearable.DataClient
+import com.google.android.gms.wearable.DataEventBuffer
+import com.google.android.gms.wearable.MessageClient
+import com.google.android.gms.wearable.MessageEvent
+import com.google.android.gms.wearable.Wearable
 import com.google.gson.Gson
 import com.samsung.android.service.health.tracking.HealthTrackerException
 import java.nio.charset.StandardCharsets
-import java.util.*
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.Locale
 
 class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProvider,
     DataClient.OnDataChangedListener,
@@ -39,20 +46,23 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
     private lateinit var binding: ActivityMainBinding
     private lateinit var ambientController: AmbientModeSupport.AmbientController
 
-    private val TAG = "MainActivity"
-    private val APP_OPEN_WEARABLE_PAYLOAD_PATH = "/APP_OPEN_WEARABLE_PAYLOAD"
-    private val WEAR_DATA_PATH = "/wear/json"
-    private val MESSAGE_ITEM_RECEIVED_PATH = "/message-item-received"
+    private val tag = "MainActivity"
+    private val appOpenWearablePayloadPath = "/APP_OPEN_WEARABLE_PAYLOAD"
+    private val wearDataPath = "/wear/json"
+    private val messageItemReceivedPath = "/message-item-received"
     private val wearableAppCheckPayloadReturnACK = "AppOpenWearableACK"
-    private var mobileDeviceConnected: Boolean = false
+
+    private var mobileDeviceConnected = false
     private var mobileNodeUri: String? = null
 
     private var connectionManager: ConnectionManager? = null
     private var heartRateListener: HeartRateListener? = null
     private var spO2Listener: SpO2Listener? = null
     private var ecgListener: EcgListener? = null
+
     private var connected = false
     private var permissionGranted = false
+    private var trackerObserverRegistered = false
 
     private val trackerDataObserver = object : TrackerDataObserver {
         override fun onHeartRateTrackerDataChanged(hrData: HeartRateData) {
@@ -71,6 +81,7 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
         override fun onSpO2TrackerDataChanged(status: Int, spO2Value: Int) {
             runOnUiThread {
                 if (status == SpO2Status.MEASUREMENT_COMPLETED) {
+                    binding.txtSpO2.text = spO2Value.toString()
                     binding.messagelogTextView.append("\nSpO2: $spO2Value %")
                     sendSensorDataToPhone("spo2", spO2Value)
                     binding.startSpo2Button.text = "SpO2"
@@ -82,9 +93,12 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
             runOnUiThread {
                 if (!ecgData.isLeadOff) {
                     val ecgValue = ecgData.avgEcg
-                    binding.messagelogTextView.append(String.format(Locale.US, "\nECG: %.1f µV", ecgValue * 1000))
+                    val formattedEcg = String.format(Locale.US, "%.1f", ecgValue * 1000)
+                    binding.txtEcg.text = formattedEcg
+                    binding.messagelogTextView.append("\nECG: $formattedEcg µV")
                     sendSensorDataToPhone("ecg", ecgValue)
                 } else {
+                    binding.txtEcg.text = "Off"
                     binding.messagelogTextView.append("\nECG: Lead Off")
                 }
                 binding.startEcgButton.text = "ECG"
@@ -103,6 +117,7 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
             runOnUiThread {
                 Toast.makeText(applicationContext, getString(stringResourceId), Toast.LENGTH_SHORT).show()
             }
+
             if (stringResourceId != R.string.ConnectedToHs) {
                 return
             }
@@ -118,16 +133,38 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
             ecgListener = EcgListener()
             connectionManager?.initEcg(ecgListener)
 
-            TrackerDataNotifier.getInstance().addObserver(trackerDataObserver)
             discoverAndNotifyMobileDevice()
         }
 
         override fun onError(e: HealthTrackerException) {
-            runOnUiThread {
-                Toast.makeText(applicationContext, "Health error", Toast.LENGTH_LONG).show()
+            if (
+                e.errorCode == HealthTrackerException.OLD_PLATFORM_VERSION ||
+                e.errorCode == HealthTrackerException.PACKAGE_NOT_INSTALLED
+            ) {
+                runOnUiThread {
+                    Toast.makeText(
+                        applicationContext,
+                        getString(R.string.HealthPlatformVersionIsOutdated),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+
+            if (e.hasResolution()) {
+                e.resolve(this@MainActivity)
+            } else {
+                runOnUiThread {
+                    Toast.makeText(
+                        applicationContext,
+                        getString(R.string.ConnectionError),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                Log.e(tag, "Could not connect to Health Tracking Service: ${e.message}", e)
             }
         }
     }
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -138,10 +175,15 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         ambientController = AmbientModeSupport.attach(this)
 
+        permissionGranted = isPermissionGranted()
+        registerTrackerObserver()
+
         binding.startSpo2Button.setOnClickListener {
             if (isPermissionsOrConnectionInvalid()) return@setOnClickListener
+
             spO2Listener?.let {
                 it.startTracker()
+                binding.txtSpO2.text = "..."
                 binding.startSpo2Button.text = "..."
                 binding.messagelogTextView.append("\nStarting SpO2...")
             }
@@ -149,8 +191,10 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
 
         binding.startEcgButton.setOnClickListener {
             if (isPermissionsOrConnectionInvalid()) return@setOnClickListener
+
             ecgListener?.let {
                 it.startTracker()
+                binding.txtEcg.text = "..."
                 binding.startEcgButton.text = "..."
                 binding.messagelogTextView.append("\nStarting ECG...")
             }
@@ -164,78 +208,110 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
             }
         }
 
-        createConnectionManager()
-        TrackerDataNotifier.getInstance().addObserver(trackerDataObserver)
-        
-        if (!isPermissionGranted()) {
-            requestPermissions()
+        if (!permissionGranted) {
+            requestPermissionsCompat()
+        } else {
+            createConnectionManager()
         }
     }
 
     private fun isPermissionsOrConnectionInvalid(): Boolean {
         if (!isPermissionGranted()) {
-            requestPermissions()
+            permissionGranted = false
+            requestPermissionsCompat()
             return true
         }
+
+        permissionGranted = true
+
         if (!connected) {
-            Toast.makeText(applicationContext, "Not connected to HS", Toast.LENGTH_SHORT).show()
+            Toast.makeText(applicationContext, getString(R.string.ConnectionError), Toast.LENGTH_SHORT).show()
             return true
         }
+
         return false
     }
 
     private fun isPermissionGranted(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
-            (ActivityCompat.checkSelfPermission(this, HealthPermissions.READ_HEART_RATE) == PackageManager.PERMISSION_GRANTED
-                    && ActivityCompat.checkSelfPermission(this, HealthPermissions.READ_OXYGEN_SATURATION) == PackageManager.PERMISSION_GRANTED)
+            ActivityCompat.checkSelfPermission(this, HealthPermissions.READ_HEART_RATE) == PackageManager.PERMISSION_GRANTED &&
+                    ActivityCompat.checkSelfPermission(this, HealthPermissions.READ_OXYGEN_SATURATION) == PackageManager.PERMISSION_GRANTED
         } else {
-            (ActivityCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED)
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED
         }
     }
 
-    private fun requestPermissions() {
+    private fun requestPermissionsCompat() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
-            ActivityCompat.requestPermissions(this, arrayOf(HealthPermissions.READ_HEART_RATE, HealthPermissions.READ_OXYGEN_SATURATION), 0)
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(
+                    HealthPermissions.READ_HEART_RATE,
+                    HealthPermissions.READ_OXYGEN_SATURATION
+                ),
+                0
+            )
         } else {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.BODY_SENSORS), 0)
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.BODY_SENSORS),
+                0
+            )
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
         if (requestCode == 0) {
             permissionGranted = true
-            for (i in grantResults.indices) {
-                if (grantResults[i] == PackageManager.PERMISSION_DENIED) {
+
+            for (result in grantResults) {
+                if (result == PackageManager.PERMISSION_DENIED) {
                     permissionGranted = false
                     Toast.makeText(this, "Permission denied", Toast.LENGTH_SHORT).show()
                     break
                 }
             }
+
             if (permissionGranted) {
                 createConnectionManager()
             }
         }
+
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     private fun createConnectionManager() {
+        if (connectionManager != null) return
+
         try {
             connectionManager = ConnectionManager(connectionObserver)
             connectionManager?.connect(applicationContext)
         } catch (t: Throwable) {
-            Log.e(TAG, t.message ?: "Error")
+            Log.e(tag, t.message ?: "Error", t)
         }
     }
 
     override fun onResume() {
         super.onResume()
         permissionGranted = isPermissionGranted()
+
+        if (permissionGranted) {
+            createConnectionManager()
+        }
+
         try {
             Wearable.getDataClient(this).addListener(this)
             Wearable.getMessageClient(this).addListener(this)
-            Wearable.getCapabilityClient(this).addListener(this, Uri.parse("wear://"), CapabilityClient.FILTER_REACHABLE)
+            Wearable.getCapabilityClient(this)
+                .addListener(this, Uri.parse("wear://"), CapabilityClient.FILTER_REACHABLE)
             discoverAndNotifyMobileDevice()
-        } catch (e: Exception) { e.printStackTrace() }
+        } catch (e: Exception) {
+            Log.e(tag, "Wear listener error", e)
+        }
     }
 
     override fun onPause() {
@@ -245,7 +321,7 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
             Wearable.getMessageClient(this).removeListener(this)
             Wearable.getCapabilityClient(this).removeListener(this)
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(tag, "Wear remove listener error", e)
         }
     }
 
@@ -254,8 +330,9 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
         heartRateListener?.stopTracker()
         spO2Listener?.stopTracker()
         ecgListener?.stopTracker()
-        TrackerDataNotifier.getInstance().removeObserver(trackerDataObserver)
+        unregisterTrackerObserver()
         connectionManager?.disconnect()
+        connectionManager = null
     }
 
     private fun discoverAndNotifyMobileDevice() {
@@ -264,8 +341,11 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
                 mobileNodeUri = node.id
                 mobileDeviceConnected = true
                 val payload = wearableAppCheckPayloadReturnACK.toByteArray()
-                Wearable.getMessageClient(this).sendMessage(node.id, APP_OPEN_WEARABLE_PAYLOAD_PATH, payload)
-                runOnUiThread { binding.deviceconnectionStatusTv.text = "Connected: ${node.displayName}" }
+                Wearable.getMessageClient(this)
+                    .sendMessage(node.id, appOpenWearablePayloadPath, payload)
+                runOnUiThread {
+                    binding.deviceconnectionStatusTv.text = "Connected: ${node.displayName}"
+                }
                 break
             }
         }
@@ -273,30 +353,65 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
 
     private fun sendSensorDataToPhone(dataType: String, value: Any) {
         if (!mobileDeviceConnected || mobileNodeUri == null) return
-        val data = mapOf("type" to dataType, "value" to value.toString(), "timestamp" to System.currentTimeMillis())
+
+        val data = mapOf(
+            "type" to dataType,
+            "value" to value.toString(),
+            "timestamp" to System.currentTimeMillis()
+        )
         val json = Gson().toJson(data)
-        Wearable.getMessageClient(this).sendMessage(mobileNodeUri!!, WEAR_DATA_PATH, json.toByteArray(StandardCharsets.UTF_8))
+
+        Wearable.getMessageClient(this)
+            .sendMessage(mobileNodeUri!!, wearDataPath, json.toByteArray(StandardCharsets.UTF_8))
     }
 
     private fun sendManualMessageToPhone(text: String) {
         if (!mobileDeviceConnected || mobileNodeUri == null) return
+
         val payload = text.toByteArray(StandardCharsets.UTF_8)
-        Wearable.getMessageClient(this).sendMessage(mobileNodeUri!!, MESSAGE_ITEM_RECEIVED_PATH, payload)
-            .addOnSuccessListener { binding.messagelogTextView.append("\nSent manual: $text") }
+        Wearable.getMessageClient(this)
+            .sendMessage(mobileNodeUri!!, messageItemReceivedPath, payload)
+            .addOnSuccessListener {
+                binding.messagelogTextView.append("\nSent manual: $text")
+            }
     }
 
     override fun onMessageReceived(event: MessageEvent) {
-        if (event.path == APP_OPEN_WEARABLE_PAYLOAD_PATH) {
+        if (event.path == appOpenWearablePayloadPath) {
             mobileNodeUri = event.sourceNodeId
             mobileDeviceConnected = true
             val payload = wearableAppCheckPayloadReturnACK.toByteArray()
-            Wearable.getMessageClient(this).sendMessage(event.sourceNodeId, APP_OPEN_WEARABLE_PAYLOAD_PATH, payload)
-            runOnUiThread { binding.deviceconnectionStatusTv.text = "Mobile connected" }
+
+            Wearable.getMessageClient(this)
+                .sendMessage(event.sourceNodeId, appOpenWearablePayloadPath, payload)
+
+            runOnUiThread {
+                binding.deviceconnectionStatusTv.text = "Mobile connected"
+            }
         }
     }
 
-    override fun onCapabilityChanged(capabilityInfo: CapabilityInfo) { discoverAndNotifyMobileDevice() }
-    override fun onDataChanged(p0: DataEventBuffer) {}
+    override fun onCapabilityChanged(capabilityInfo: CapabilityInfo) {
+        discoverAndNotifyMobileDevice()
+    }
+
+    override fun onDataChanged(dataEvents: DataEventBuffer) = Unit
+
     override fun getAmbientCallback(): AmbientModeSupport.AmbientCallback = MyAmbientCallback()
+
     private inner class MyAmbientCallback : AmbientModeSupport.AmbientCallback()
+
+    private fun registerTrackerObserver() {
+        if (!trackerObserverRegistered) {
+            TrackerDataNotifier.getInstance().addObserver(trackerDataObserver)
+            trackerObserverRegistered = true
+        }
+    }
+
+    private fun unregisterTrackerObserver() {
+        if (trackerObserverRegistered) {
+            TrackerDataNotifier.getInstance().removeObserver(trackerDataObserver)
+            trackerObserverRegistered = false
+        }
+    }
 }
