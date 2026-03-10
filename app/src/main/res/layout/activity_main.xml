@@ -49,6 +49,16 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/checkwearablesButton" />
 
+    <Button
+        android:id="@+id/openGroupsButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Open groups"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/openDashboardButton" />
+
     <ScrollView
         android:id="@+id/scrollviewText"
         android:layout_width="0dp"
@@ -57,7 +67,7 @@
         app:layout_constraintBottom_toTopOf="@id/textInputLayout"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/openDashboardButton">
+        app:layout_constraintTop_toBottomOf="@id/openGroupsButton">
 
         <TextView
             android:id="@+id/messagelogTextView"

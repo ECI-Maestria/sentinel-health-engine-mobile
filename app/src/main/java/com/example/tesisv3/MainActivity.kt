@@ -3,6 +3,7 @@ package com.example.tesisv3
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
+import com.example.tesisv3.GroupsActivity
 import android.content.Context
 import android.content.res.Configuration
 import android.net.Uri
@@ -92,6 +93,10 @@ class MainActivity : AppCompatActivity(), CoroutineScope by MainScope(),
 
         binding.openDashboardButton.setOnClickListener {
             startActivity(Intent(this, DashboardActivity::class.java))
+        }
+
+        binding.openGroupsButton.setOnClickListener {
+            startActivity(Intent(this, GroupsActivity::class.java))
         }
 
         binding.sendmessageButton.setOnClickListener {
@@ -370,5 +375,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope by MainScope(),
         }
     }
 }
+
+
 
 
