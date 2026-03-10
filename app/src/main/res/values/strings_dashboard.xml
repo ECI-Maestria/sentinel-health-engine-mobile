@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dashboard_title">Health Dashboard</string>
+    <string name="open_dashboard">Open dashboard</string>
+    <string name="dashboard_steps">Steps Today</string>
+    <string name="dashboard_sleep">Sleep</string>
+    <string name="dashboard_heart_rate">Heart Rate</string>
+    <string name="dashboard_glucose">Glucose</string>
+    <string name="dashboard_activity_overview">Activity Overview</string>
+    <string name="dashboard_day">Day</string>
+    <string name="dashboard_week">Week</string>
+    <string name="dashboard_month">Month</string>
+    <string name="dashboard_resting">Resting</string>
+    <string name="dashboard_quality">Quality Good</string>
+    <string name="dashboard_goal">Goal 10,000</string>
+    <string name="dashboard_month_delta">+33 %% vs last month</string>
+    <string name="dashboard_steps_value">8,942</string>
+    <string name="dashboard_sleep_value">7h 15m</string>
+    <string name="dashboard_heart_rate_value">72 bpm</string>
+    <string name="dashboard_glucose_value">2405</string>
+    <string name="dashboard_chart_title">Weekly balance</string>
+    <string name="dashboard_legend_steps">Steps</string>
+    <string name="dashboard_legend_calories">Calories</string>
+</resources>

@@ -4,9 +4,12 @@
 
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.BODY_SENSORS" />
+    <uses-permission android:name="android.permission.BODY_SENSORS_BACKGROUND" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
     <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="com.samsung.android.wear.permission.ECG" />
+    <uses-permission android:name="com.samsung.android.hardware.sensormanager.permission.READ_ADDITIONAL_HEALTH_DATA" />
 
 
     <uses-feature android:name="android.hardware.type.watch" />
@@ -18,6 +21,7 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
         tools:ignore="GoogleAppIndexingWarning">
+
         <activity
             android:name="com.example.tesisv3.ui.activities.DetailsActivity"
             android:exported="false"
@@ -36,20 +40,13 @@
             android:value="true" />
 
         <activity
-            android:exported="false"
+            android:exported="true"
             android:name="com.example.tesisv3.MainActivity"
             android:label="@string/app_name">
-        </activity>
-
-        <activity
-            android:name=".ui.activities.Main2Activity"
-            android:exported="true"
-            android:taskAffinity="">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
         </activity>
 
     </application>
