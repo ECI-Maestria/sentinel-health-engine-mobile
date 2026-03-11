@@ -22,10 +22,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Settings
@@ -37,9 +33,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -86,30 +79,13 @@ private fun GroupsScreen(onBack: () -> Unit) {
     Scaffold(
         containerColor = GroupsBackground,
         bottomBar = {
-            NavigationBar(
-                containerColor = Color.White,
-                tonalElevation = 4.dp,
-                modifier = Modifier.navigationBarsPadding()
-            ) {
-                val items = listOf(
-                    Icons.Filled.Home,
-                    Icons.Filled.Groups,
-                    Icons.Filled.DateRange,
-                    Icons.Filled.LocalHospital
-                )
-                items.forEachIndexed { index, icon ->
-                    NavigationBarItem(
-                        selected = selectedNav == index,
-                        onClick = { selectedNav = index },
-                        icon = { Icon(icon, contentDescription = null) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = GroupsNav,
-                            unselectedIconColor = GroupsNav.copy(alpha = 0.5f),
-                            indicatorColor = GroupsChipAlt
-                        )
-                    )
-                }
-            }
+            AppBottomNav(
+                current = BottomNavDestination.GROUPS,
+                modifier = Modifier.navigationBarsPadding(),
+                indicatorColor = GroupsChipAlt,
+                selectedColor = GroupsNav,
+                unselectedColor = GroupsNav.copy(alpha = 0.5f)
+            )
         }
     ) { innerPadding ->
         LazyColumn(
