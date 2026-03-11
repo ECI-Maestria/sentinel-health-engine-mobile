@@ -3,6 +3,7 @@ package com.example.tesisv3
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
+import com.example.tesisv3.LoginActivity
 import com.example.tesisv3.GroupsActivity
 import android.content.Context
 import android.content.res.Configuration
@@ -97,6 +98,10 @@ class MainActivity : AppCompatActivity(), CoroutineScope by MainScope(),
 
         binding.openGroupsButton.setOnClickListener {
             startActivity(Intent(this, GroupsActivity::class.java))
+        }
+
+        binding.openLoginButton.setOnClickListener {
+            startActivity(Intent(this, LoginActivity::class.java))
         }
 
         binding.sendmessageButton.setOnClickListener {
@@ -375,6 +380,8 @@ class MainActivity : AppCompatActivity(), CoroutineScope by MainScope(),
         }
     }
 }
+
+
 
 
 

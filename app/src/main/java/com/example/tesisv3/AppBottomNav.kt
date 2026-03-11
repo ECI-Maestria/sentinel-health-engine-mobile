@@ -62,7 +62,7 @@ fun AppBottomNav(
                             context.startActivity(Intent(context, CalendarActivity::class.java))
                         }
                         BottomNavDestination.CARE -> {
-                            // Placeholder for future care screen.
+                            context.startActivity(Intent(context, CareActivity::class.java))
                         }
                     }
                 },
