@@ -17,9 +17,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 enum class BottomNavDestination {
-    HOME,
-    GROUPS,
     DASHBOARD,
+    GROUPS,
+    CALENDAR,
     CARE
 }
 
@@ -41,7 +41,7 @@ fun AppBottomNav(
         val items = listOf(
             BottomNavDestination.DASHBOARD to Icons.Filled.Home,
             BottomNavDestination.GROUPS to Icons.Filled.Groups,
-            BottomNavDestination.HOME to Icons.Filled.DateRange,
+            BottomNavDestination.CALENDAR to Icons.Filled.DateRange,
             BottomNavDestination.CARE to Icons.Filled.LocalHospital
         )
 
@@ -58,11 +58,11 @@ fun AppBottomNav(
                         BottomNavDestination.GROUPS -> {
                             context.startActivity(Intent(context, GroupsActivity::class.java))
                         }
-                        BottomNavDestination.HOME -> {
-                            // Placeholder: keep the tab highlighted for now.
+                        BottomNavDestination.CALENDAR -> {
+                            context.startActivity(Intent(context, CalendarActivity::class.java))
                         }
                         BottomNavDestination.CARE -> {
-                            // Placeholder: keep the tab highlighted for now.
+                            // Placeholder for future care screen.
                         }
                     }
                 },
@@ -76,4 +76,3 @@ fun AppBottomNav(
         }
     }
 }
-
