@@ -66,6 +66,10 @@ android {
 }
 
 dependencies {
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("androidx.room:room-runtime:2.7.0")
+    implementation("androidx.room:room-ktx:2.7.0")
+    kapt("androidx.room:room-compiler:2.7.0")
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.legacy.legacysupport)
     implementation(libs.jetbrains.kotlinx.couroutine)
@@ -75,7 +79,7 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
     testImplementation(libs.junit)
     implementation(libs.glide)
-    annotationProcessor(libs.glide.compiler)
+    kapt(libs.glide.compiler)
     androidTestImplementation(libs.androidx.espresso.core)
     implementation(libs.androidx.cardview)
     implementation(libs.androidx.compose.material3)
