@@ -47,6 +47,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 
 class LoginActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -191,6 +192,7 @@ private fun LoginScreen(onLoginSuccess: () -> Unit) {
 
 @Composable
 private fun LoginTopBar() {
+    val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -208,7 +210,9 @@ private fun LoginTopBar() {
         ) {
             Text(text = "+", color = LoginText, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         }
-        IconButton(onClick = {}) {
+        IconButton(onClick = {
+            context.startActivity(Intent(context, NotificationsActivity::class.java))
+        }) {
             Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = LoginNav)
         }
     }

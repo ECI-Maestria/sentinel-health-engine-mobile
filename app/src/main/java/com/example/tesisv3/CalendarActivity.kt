@@ -2,6 +2,7 @@ package com.example.tesisv3
 
 import android.os.Build
 import android.os.Bundle
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -49,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -130,6 +132,7 @@ private fun CalendarScreen(onBack: () -> Unit) {
 
 @Composable
 private fun CalendarTopBar(onBack: () -> Unit) {
+    val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -147,7 +150,9 @@ private fun CalendarTopBar(onBack: () -> Unit) {
         ) {
             Icon(Icons.Outlined.EventNote, contentDescription = "Brand", tint = CalendarNav)
         }
-        IconButton(onClick = {}) {
+        IconButton(onClick = {
+            context.startActivity(Intent(context, NotificationsActivity::class.java))
+        }) {
             Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = CalendarNav)
         }
     }

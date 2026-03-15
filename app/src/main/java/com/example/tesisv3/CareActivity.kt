@@ -9,6 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,8 +26,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MedicalServices
 import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -69,6 +73,8 @@ import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.example.tesisv3.data.AppDatabase
 import com.example.tesisv3.data.MedicationEntity
+import com.example.tesisv3.data.MedicationLogEntity
+import android.content.Intent
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Locale
@@ -121,19 +127,38 @@ private fun MedicationEntity.displaySchedule(): String {
 private fun statusColor(status: String): Color {
     return when (status) {
         "Taken" -> CareChip
+        "Late" -> CareWarn
         "Missed" -> CareError
         else -> CareWarn
     }
+}
+
+private fun isPastScheduledTimeToday(item: MedicationEntity): Boolean {
+    if (item.scheduleType != ScheduleType.SPECIFIC.name) return false
+    val hour = item.hourOfDay ?: return false
+    val minute = item.minute ?: return false
+    val now = Calendar.getInstance()
+    val target = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, hour)
+        set(Calendar.MINUTE, minute)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    return now.after(target)
 }
 
 @Composable
 private fun CareScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val dao = remember { AppDatabase.getInstance(context).medicationDao() }
+    val logDao = remember { AppDatabase.getInstance(context).medicationLogDao() }
     val scope = rememberCoroutineScope()
     val medications by dao.observeAll().collectAsState(initial = emptyList())
 
     var showSheet by remember { mutableStateOf(false) }
+    var editingItem by remember { mutableStateOf<MedicationEntity?>(null) }
+    var deletingItem by remember { mutableStateOf<MedicationEntity?>(null) }
+    var statusItem by remember { mutableStateOf<MedicationEntity?>(null) }
     var pendingEnableId by remember { mutableStateOf<String?>(null) }
 
     val requestPermissionLauncher = rememberLauncherForActivityResult(
@@ -149,6 +174,9 @@ private fun CareScreen(onBack: () -> Unit) {
     }
 
     LaunchedEffect(medications) {
+        medications
+            .filter { it.status == "Due" && isPastScheduledTimeToday(it) }
+            .forEach { dao.update(it.copy(status = "Missed")) }
         medications.filter { it.enabled }.forEach { scheduleMedication(context, it) }
     }
 
@@ -191,7 +219,10 @@ private fun CareScreen(onBack: () -> Unit) {
                         fontWeight = FontWeight.Bold
                     )
                     Button(
-                        onClick = { showSheet = true },
+                        onClick = {
+                            editingItem = null
+                            showSheet = true
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = CareChip),
                         shape = RoundedCornerShape(18.dp),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
@@ -209,6 +240,12 @@ private fun CareScreen(onBack: () -> Unit) {
                     badgeText = item.status,
                     badgeColor = statusColor(item.status),
                     isOn = item.enabled,
+                    onClick = { statusItem = item },
+                    onEdit = {
+                        editingItem = item
+                        showSheet = true
+                    },
+                    onDelete = { deletingItem = item },
                     onToggle = { enabled ->
                         scope.launch { dao.update(item.copy(enabled = enabled)) }
                         if (enabled) {
@@ -234,10 +271,113 @@ private fun CareScreen(onBack: () -> Unit) {
         if (showSheet) {
             AddMedicationSheet(
                 onDismiss = { showSheet = false },
-                onAdd = { newItem ->
-                    scope.launch { dao.insert(newItem) }
+                existing = editingItem,
+                onSave = { newItem ->
+                    scope.launch {
+                        if (editingItem == null) {
+                            dao.insert(newItem)
+                        } else {
+                            dao.update(newItem)
+                        }
+                    }
                     showSheet = false
-                    scheduleMedication(context, newItem)
+                    editingItem = null
+                    if (newItem.enabled) {
+                        scheduleMedication(context, newItem)
+                    } else {
+                        cancelMedication(context, newItem)
+                    }
+                }
+            )
+        }
+
+        if (deletingItem != null) {
+            val item = deletingItem
+            AlertDialog(
+                onDismissRequest = { deletingItem = null },
+                title = { Text("Delete medication") },
+                text = { Text("Are you sure you want to delete ${item?.name}?") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            item?.let {
+                                scope.launch { dao.delete(it) }
+                                cancelMedication(context, it)
+                            }
+                            deletingItem = null
+                        }
+                    ) { Text("Delete") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { deletingItem = null }) { Text("Cancel") }
+                }
+            )
+        }
+
+        if (statusItem != null) {
+            val item = statusItem
+            AlertDialog(
+                onDismissRequest = { statusItem = null },
+                title = { Text("Medication status") },
+                text = { Text("Update status for ${item?.name}") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            item?.let {
+                                val updated = it.copy(status = "Taken")
+                                scope.launch {
+                                    dao.update(updated)
+                                    logDao.insert(
+                                        MedicationLogEntity(
+                                            id = UUID.randomUUID().toString(),
+                                            medicationId = it.id,
+                                            medicationName = it.name,
+                                            status = "Taken",
+                                            takenAt = System.currentTimeMillis()
+                                        )
+                                    )
+                                }
+                            }
+                            statusItem = null
+                        }
+                    ) { Text("Taken") }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(
+                            onClick = {
+                                item?.let {
+                                    val updated = it.copy(status = "Late")
+                                    scope.launch {
+                                        dao.update(updated)
+                                        logDao.insert(
+                                            MedicationLogEntity(
+                                                id = UUID.randomUUID().toString(),
+                                                medicationId = it.id,
+                                                medicationName = it.name,
+                                                status = "Late",
+                                                takenAt = System.currentTimeMillis()
+                                            )
+                                        )
+                                    }
+                                }
+                                statusItem = null
+                            }
+                        ) { Text("Taken late") }
+
+                        if (item != null && isPastScheduledTimeToday(item)) {
+                            TextButton(
+                                onClick = {
+                                    item.let { med ->
+                                        scope.launch { dao.update(med.copy(status = "Missed")) }
+                                    }
+                                    statusItem = null
+                                }
+                            ) { Text("Mark missed") }
+                        }
+
+                        TextButton(onClick = { statusItem = null }) { Text("Cancel") }
+                    }
                 }
             )
         }
@@ -291,6 +431,7 @@ private fun cancelMedication(context: android.content.Context, item: MedicationE
 
 @Composable
 private fun CareTopBar(onBack: () -> Unit) {
+    val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -308,7 +449,9 @@ private fun CareTopBar(onBack: () -> Unit) {
         ) {
             Icon(Icons.Outlined.MedicalServices, contentDescription = "Brand", tint = CareNav)
         }
-        IconButton(onClick = {}) {
+        IconButton(onClick = {
+            context.startActivity(Intent(context, NotificationsActivity::class.java))
+        }) {
             Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = CareNav)
         }
     }
@@ -321,6 +464,9 @@ private fun MedicationRow(
     badgeText: String,
     badgeColor: Color,
     isOn: Boolean,
+    onClick: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
     onToggle: (Boolean) -> Unit
 ) {
     Surface(
@@ -332,7 +478,8 @@ private fun MedicationRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .clickable(onClick = onClick),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
@@ -367,6 +514,14 @@ private fun MedicationRow(
 
             Spacer(Modifier.size(10.dp))
 
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Outlined.Edit, contentDescription = "Edit", tint = CareNav)
+            }
+
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = CareError)
+            }
+
             Switch(
                 checked = isOn,
                 onCheckedChange = onToggle,
@@ -385,21 +540,27 @@ private fun MedicationRow(
 @Composable
 private fun AddMedicationSheet(
     onDismiss: () -> Unit,
-    onAdd: (MedicationEntity) -> Unit
+    onSave: (MedicationEntity) -> Unit,
+    existing: MedicationEntity? = null
 ) {
-    var name by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
-    var hour by remember { mutableStateOf("") }
-    var everyX by remember { mutableStateOf("") }
-    var scheduleType by remember { mutableStateOf(ScheduleType.SPECIFIC) }
+    var name by remember(existing?.id) { mutableStateOf(existing?.name ?: "") }
+    var amount by remember(existing?.id) { mutableStateOf(existing?.amount ?: "") }
+    var hour by remember(existing?.id) { mutableStateOf("") }
+    var everyX by remember(existing?.id) { mutableStateOf(existing?.intervalHours?.toString() ?: "") }
+    var scheduleType by remember(existing?.id) {
+        mutableStateOf(
+            if (existing?.scheduleType == ScheduleType.EVERY_X.name) ScheduleType.EVERY_X
+            else ScheduleType.SPECIFIC
+        )
+    }
     var error by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
     var showTimePicker by remember { mutableStateOf(false) }
-    var medType by remember { mutableStateOf("Pill") }
+    var medType by remember(existing?.id) { mutableStateOf(existing?.medType ?: "Pill") }
 
     val timePickerState = rememberTimePickerState(
-        initialHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
-        initialMinute = Calendar.getInstance().get(Calendar.MINUTE),
+        initialHour = existing?.hourOfDay ?: Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
+        initialMinute = existing?.minute ?: Calendar.getInstance().get(Calendar.MINUTE),
         is24Hour = false
     )
 
@@ -409,6 +570,10 @@ private fun AddMedicationSheet(
         return String.format(Locale.US, "%d:%02d %s", hour12, minute, amPm)
     }
 
+    if (existing != null && scheduleType == ScheduleType.SPECIFIC && hour.isBlank()) {
+        hour = formatTime(timePickerState.hour, timePickerState.minute)
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -416,7 +581,11 @@ private fun AddMedicationSheet(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("New medication", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(
+                if (existing == null) "New medication" else "Edit medication",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
 
             OutlinedTextField(
                 value = name,
@@ -552,23 +721,23 @@ private fun AddMedicationSheet(
                         error = false
                         errorMessage = ""
                         val item = MedicationEntity(
-                            id = UUID.randomUUID().toString(),
+                            id = existing?.id ?: UUID.randomUUID().toString(),
                             name = name.trim(),
                             amount = amount.trim(),
                             scheduleType = scheduleType.name,
                             hourOfDay = if (scheduleType == ScheduleType.SPECIFIC) timePickerState.hour else null,
                             minute = if (scheduleType == ScheduleType.SPECIFIC) timePickerState.minute else null,
                             intervalHours = interval,
-                            status = "Due",
-                            enabled = true,
+                            status = existing?.status ?: "Due",
+                            enabled = existing?.enabled ?: true,
                             medType = medType,
-                            createdAt = System.currentTimeMillis()
+                            createdAt = existing?.createdAt ?: System.currentTimeMillis()
                         )
-                        onAdd(item)
+                        onSave(item)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = CareChip)
                 ) {
-                    Text("Add")
+                    Text(if (existing == null) "Add" else "Save")
                 }
             }
 

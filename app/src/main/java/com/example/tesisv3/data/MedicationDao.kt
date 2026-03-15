@@ -1,6 +1,7 @@
 package com.example.tesisv3.data
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -20,4 +21,10 @@ interface MedicationDao {
 
     @Update
     suspend fun update(entity: MedicationEntity)
+
+    @Delete
+    suspend fun delete(entity: MedicationEntity)
+
+    @Query("UPDATE medications SET status = :newStatus")
+    suspend fun updateAllStatus(newStatus: String)
 }

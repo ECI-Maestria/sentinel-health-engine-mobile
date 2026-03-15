@@ -7,16 +7,19 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
-import androidx.work.Worker
+import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.example.tesisv3.data.AppDatabase
+import com.example.tesisv3.data.NotificationEntity
 import kotlin.math.abs
+import java.util.UUID
 
 class MedicationReminderWorker(
     appContext: Context,
     workerParams: WorkerParameters
-) : Worker(appContext, workerParams) {
+) : CoroutineWorker(appContext, workerParams) {
 
-    override fun doWork(): Result {
+    override suspend fun doWork(): Result {
         val name = inputData.getString("name") ?: "Medication"
         val amount = inputData.getString("amount") ?: ""
         val schedule = inputData.getString("schedule") ?: ""
@@ -64,6 +67,16 @@ class MedicationReminderWorker(
             abs(medId.hashCode())
         }
         manager.notify(notificationId, notification)
+
+        val dao = AppDatabase.getInstance(applicationContext).notificationDao()
+        dao.insert(
+            NotificationEntity(
+                id = UUID.randomUUID().toString(),
+                title = "$actionText: $name",
+                body = "$amount • $schedule",
+                createdAt = System.currentTimeMillis()
+            )
+        )
         return Result.success()
     }
 }
