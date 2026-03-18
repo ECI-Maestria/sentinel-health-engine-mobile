@@ -27,12 +27,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.EventNote
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -104,6 +106,8 @@ private fun CalendarScreen(onBack: () -> Unit) {
     var selectedDateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var displayedMonthMillis by remember { mutableStateOf(startOfMonth(System.currentTimeMillis())) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var editingAppointment by remember { mutableStateOf<AppointmentEntity?>(null) }
+    var deletingAppointment by remember { mutableStateOf<AppointmentEntity?>(null) }
 
     Scaffold(
         containerColor = CalendarBackground,
@@ -180,35 +184,67 @@ private fun CalendarScreen(onBack: () -> Unit) {
                     val item = monthlyAppointments[index]
                     AppointmentCard(
                         title = item.title,
-                        detail = formatDateTime(item.startAt)
+                        detail = formatDateTime(item.startAt),
+                        onClick = { editingAppointment = item },
+                        onDelete = { deletingAppointment = item }
                     )
                 }
             }
         }
     }
 
-    if (showAddDialog) {
+    if (showAddDialog || editingAppointment != null) {
+        val editing = editingAppointment
         AddAppointmentDialog(
-            selectedDateMillis = selectedDateMillis,
-            onDismiss = { showAddDialog = false },
+            selectedDateMillis = editing?.startAt ?: selectedDateMillis,
+            existing = editing,
+            onDismiss = {
+                showAddDialog = false
+                editingAppointment = null
+            },
             onSave = { title, hour, minute ->
+                val baseMillis = editing?.startAt ?: selectedDateMillis
                 val cal = Calendar.getInstance().apply {
-                    timeInMillis = selectedDateMillis
+                    timeInMillis = baseMillis
                     set(Calendar.HOUR_OF_DAY, hour)
                     set(Calendar.MINUTE, minute)
                     set(Calendar.SECOND, 0)
                     set(Calendar.MILLISECOND, 0)
                 }
                 scope.launch {
-                    dao.insert(
-                        AppointmentEntity(
-                            id = UUID.randomUUID().toString(),
-                            title = title,
-                            startAt = cal.timeInMillis
-                        )
+                    val entity = AppointmentEntity(
+                        id = editing?.id ?: UUID.randomUUID().toString(),
+                        title = title,
+                        startAt = cal.timeInMillis
                     )
+                    if (editing == null) {
+                        dao.insert(entity)
+                    } else {
+                        dao.update(entity)
+                    }
                 }
                 showAddDialog = false
+                editingAppointment = null
+            }
+        )
+    }
+
+    if (deletingAppointment != null) {
+        val item = deletingAppointment
+        AlertDialog(
+            onDismissRequest = { deletingAppointment = null },
+            title = { Text("Delete appointment") },
+            text = { Text("Delete ${item?.title}?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        item?.let { scope.launch { dao.delete(it) } }
+                        deletingAppointment = null
+                    }
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingAppointment = null }) { Text("Cancel") }
             }
         )
     }
@@ -372,7 +408,12 @@ private fun CalendarCard(
 }
 
 @Composable
-private fun AppointmentCard(title: String, detail: String) {
+private fun AppointmentCard(
+    title: String,
+    detail: String,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = CalendarChipAlt,
@@ -382,6 +423,7 @@ private fun AppointmentCard(title: String, detail: String) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable(onClick = onClick)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -399,6 +441,17 @@ private fun AppointmentCard(title: String, detail: String) {
                 Text(title, color = CalendarText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text(detail, color = CalendarMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
+
+            Spacer(Modifier.weight(1f))
+            Card(
+                shape = CircleShape,
+                colors = CardDefaults.cardColors(containerColor = CalendarChipAlt),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = Color(0xFFCC6A63))
+                }
+            }
         }
     }
 }
@@ -407,16 +460,17 @@ private fun AppointmentCard(title: String, detail: String) {
 @Composable
 private fun AddAppointmentDialog(
     selectedDateMillis: Long,
+    existing: AppointmentEntity?,
     onDismiss: () -> Unit,
     onSave: (String, Int, Int) -> Unit
 ) {
-    var title by remember { mutableStateOf("") }
+    var title by remember(existing?.id) { mutableStateOf(existing?.title ?: "") }
     var error by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
 
     val timePickerState = rememberTimePickerState(
-        initialHour = 9,
-        initialMinute = 0,
+        initialHour = existing?.let { Calendar.getInstance().apply { timeInMillis = it.startAt }.get(Calendar.HOUR_OF_DAY) } ?: 9,
+        initialMinute = existing?.let { Calendar.getInstance().apply { timeInMillis = it.startAt }.get(Calendar.MINUTE) } ?: 0,
         is24Hour = false
     )
 
@@ -429,7 +483,11 @@ private fun AddAppointmentDialog(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("New appointment", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(
+                    text = if (existing == null) "New appointment" else "Edit appointment",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
                 Text("Date: ${formatDate(selectedDateMillis)}", color = CalendarMuted)
 
                 OutlinedTextField(
