@@ -8,14 +8,20 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [MedicationEntity::class, MedicationLogEntity::class, NotificationEntity::class],
-    version = 3,
+    entities = [
+        MedicationEntity::class,
+        MedicationLogEntity::class,
+        NotificationEntity::class,
+        AppointmentEntity::class
+    ],
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun medicationDao(): MedicationDao
     abstract fun medicationLogDao(): MedicationLogDao
     abstract fun notificationDao(): NotificationDao
+    abstract fun appointmentDao(): AppointmentDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null
@@ -50,6 +56,20 @@ abstract class AppDatabase : RoomDatabase() {
                 )
             }
         }
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS appointments (
+                        id TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        startAt INTEGER NOT NULL,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
 
         fun getInstance(context: Context): AppDatabase {
             return instance ?: synchronized(this) {
@@ -58,7 +78,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "tesisv3.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { instance = it }
             }

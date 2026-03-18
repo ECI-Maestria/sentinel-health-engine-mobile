@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,32 +20,37 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.NotificationsNone
-import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EventNote
-import androidx.compose.material.icons.outlined.MedicalServices
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +60,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import com.example.tesisv3.data.AppDatabase
+import com.example.tesisv3.data.AppointmentEntity
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import java.util.UUID
 
 class CalendarActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,6 +97,13 @@ private val CalendarNav = Color(0xFF5A7A63)
 @Composable
 private fun CalendarScreen(onBack: () -> Unit) {
     var selectedNav by remember { mutableIntStateOf(2) }
+    val context = LocalContext.current
+    val dao = remember { AppDatabase.getInstance(context).appointmentDao() }
+    val scope = rememberCoroutineScope()
+    val appointments by dao.observeAll().collectAsState(initial = emptyList())
+    var selectedDateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    var displayedMonthMillis by remember { mutableStateOf(startOfMonth(System.currentTimeMillis())) }
+    var showAddDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = CalendarBackground,
@@ -109,24 +131,86 @@ private fun CalendarScreen(onBack: () -> Unit) {
         ) {
             item { CalendarTopBar(onBack) }
 
-            item { CalendarCard() }
-
             item {
-                AppointmentCard(
-                    title = "Dental Cleaning",
-                    detail = "Mon, Sep 8 * 2:30 PM",
-                    icon = Icons.Outlined.MedicalServices
+                CalendarCard(
+                    selectedDateMillis = selectedDateMillis,
+                    displayedMonthMillis = displayedMonthMillis,
+                    appointments = appointments,
+                    onDateSelected = { selectedDateMillis = it },
+                    onMonthChange = { displayedMonthMillis = it },
+                    onAddAppointment = { showAddDialog = true }
                 )
             }
 
+            val selectedMonth = Calendar.getInstance().apply { timeInMillis = displayedMonthMillis }
+            val month = selectedMonth.get(Calendar.MONTH)
+            val year = selectedMonth.get(Calendar.YEAR)
+            val monthlyAppointments = appointments.filter {
+                val cal = Calendar.getInstance().apply { timeInMillis = it.startAt }
+                cal.get(Calendar.MONTH) == month && cal.get(Calendar.YEAR) == year
+            }
+
             item {
-                AppointmentCard(
-                    title = "Refill Prescription",
-                    detail = "Mon, Sep 29 * 5:00 PM",
-                    icon = Icons.Outlined.Edit
+                Text(
+                    text = "Appointments",
+                    color = CalendarText,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
                 )
+            }
+
+            if (monthlyAppointments.isEmpty()) {
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = CalendarCard
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("No appointments this month", color = CalendarMuted)
+                        }
+                    }
+                }
+            } else {
+                items(monthlyAppointments.size) { index ->
+                    val item = monthlyAppointments[index]
+                    AppointmentCard(
+                        title = item.title,
+                        detail = formatDateTime(item.startAt)
+                    )
+                }
             }
         }
+    }
+
+    if (showAddDialog) {
+        AddAppointmentDialog(
+            selectedDateMillis = selectedDateMillis,
+            onDismiss = { showAddDialog = false },
+            onSave = { title, hour, minute ->
+                val cal = Calendar.getInstance().apply {
+                    timeInMillis = selectedDateMillis
+                    set(Calendar.HOUR_OF_DAY, hour)
+                    set(Calendar.MINUTE, minute)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                scope.launch {
+                    dao.insert(
+                        AppointmentEntity(
+                            id = UUID.randomUUID().toString(),
+                            title = title,
+                            startAt = cal.timeInMillis
+                        )
+                    )
+                }
+                showAddDialog = false
+            }
+        )
     }
 }
 
@@ -159,7 +243,25 @@ private fun CalendarTopBar(onBack: () -> Unit) {
 }
 
 @Composable
-private fun CalendarCard() {
+private fun CalendarCard(
+    selectedDateMillis: Long,
+    displayedMonthMillis: Long,
+    appointments: List<AppointmentEntity>,
+    onDateSelected: (Long) -> Unit,
+    onMonthChange: (Long) -> Unit,
+    onAddAppointment: () -> Unit
+) {
+    val displayCal = Calendar.getInstance().apply { timeInMillis = displayedMonthMillis }
+    val displayYear = displayCal.get(Calendar.YEAR)
+    val displayMonth = displayCal.get(Calendar.MONTH)
+    val days = remember(displayedMonthMillis) { buildMonthGrid(displayYear, displayMonth) }
+    val appointmentsInMonth = appointments.filter {
+        val cal = Calendar.getInstance().apply { timeInMillis = it.startAt }
+        cal.get(Calendar.YEAR) == displayYear && cal.get(Calendar.MONTH) == displayMonth
+    }.mapNotNull {
+        Calendar.getInstance().apply { timeInMillis = it.startAt }.get(Calendar.DAY_OF_MONTH)
+    }.toSet()
+
     Surface(
         shape = RoundedCornerShape(26.dp),
         color = CalendarCard,
@@ -172,28 +274,45 @@ private fun CalendarCard() {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("January 2022", color = CalendarText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = monthYearLabel(displayedMonthMillis),
+                    color = CalendarText,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = {
+                            val cal = Calendar.getInstance().apply { timeInMillis = displayedMonthMillis }
+                            cal.add(Calendar.MONTH, -1)
+                            onMonthChange(startOfMonth(cal.timeInMillis))
+                        }
+                    ) {
+                        Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "Prev", tint = CalendarMuted)
+                    }
+                    IconButton(
+                        onClick = {
+                            val cal = Calendar.getInstance().apply { timeInMillis = displayedMonthMillis }
+                            cal.add(Calendar.MONTH, 1)
+                            onMonthChange(startOfMonth(cal.timeInMillis))
+                        }
+                    ) {
+                        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "Next", tint = CalendarMuted)
+                    }
+                }
 
                 Button(
-                    onClick = {},
+                    onClick = onAddAppointment,
                     colors = ButtonDefaults.buttonColors(containerColor = CalendarChip),
                     shape = RoundedCornerShape(18.dp),
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                 ) {
                     Text("Add\nAppointment", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = {}) {
-                        Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "Prev", tint = CalendarMuted)
-                    }
-                    IconButton(onClick = {}) {
-                        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "Next", tint = CalendarMuted)
-                    }
-                }
             }
 
-            Divider(modifier = Modifier.padding(vertical = 12.dp), color = CalendarChipAlt)
+            Spacer(Modifier.height(10.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -206,43 +325,54 @@ private fun CalendarCard() {
 
             Spacer(Modifier.height(10.dp))
 
-            val rows = listOf(
-                listOf("1", "2", "3", "4", "5", "6", "7"),
-                listOf("8", "9", "10", "11", "12", "13", "14"),
-                listOf("15", "16", "17", "18", "19", "20", "21"),
-                listOf("22", "23", "24", "25", "26", "27", "28"),
-                listOf("29", "30", "31", "", "", "", "")
-            )
-
-            rows.forEach { week ->
+            days.chunked(7).forEach { week ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    week.forEach { day ->
-                        if (day == "1") {
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(CalendarAccent),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(day, color = Color.White, fontWeight = FontWeight.Bold)
-                            }
+                    week.forEach { cell ->
+                        if (cell.day == null) {
+                            Box(modifier = Modifier.size(30.dp))
                         } else {
-                            Text(day, color = CalendarText, fontWeight = FontWeight.SemiBold)
+                            val isSelected = isSameDay(cell.dateMillis, selectedDateMillis)
+                            Column(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isSelected) CalendarAccent else Color.Transparent)
+                                    .clickable {
+                                        cell.dateMillis?.let { onDateSelected(it) }
+                                    }
+                                    .padding(2.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = cell.day.toString(),
+                                    color = if (isSelected) Color.White else CalendarText,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp
+                                )
+                                if (appointmentsInMonth.contains(cell.day)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(4.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isSelected) Color.White else CalendarChip)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
             }
         }
     }
 }
 
 @Composable
-private fun AppointmentCard(title: String, detail: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+private fun AppointmentCard(title: String, detail: String) {
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = CalendarChipAlt,
@@ -262,7 +392,7 @@ private fun AppointmentCard(title: String, detail: String, icon: androidx.compos
                     .background(Color.White),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(icon, contentDescription = null, tint = CalendarNav)
+                Icon(Icons.Outlined.EventNote, contentDescription = null, tint = CalendarNav)
             }
 
             Column(modifier = Modifier.padding(start = 12.dp)) {
@@ -273,3 +403,178 @@ private fun AppointmentCard(title: String, detail: String, icon: androidx.compos
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddAppointmentDialog(
+    selectedDateMillis: Long,
+    onDismiss: () -> Unit,
+    onSave: (String, Int, Int) -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+
+    val timePickerState = rememberTimePickerState(
+        initialHour = 9,
+        initialMinute = 0,
+        is24Hour = false
+    )
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = Color.White
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("New appointment", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("Date: ${formatDate(selectedDateMillis)}", color = CalendarMuted)
+
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it; error = false },
+                    label = { Text("Title") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = { showTimePicker = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = CalendarChip),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text("Pick time", fontWeight = FontWeight.Bold)
+                    }
+                    Text(
+                        text = formatTime(timePickerState.hour, timePickerState.minute),
+                        color = CalendarText,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                if (error) {
+                    Text("Please enter a title", color = Color(0xFFD35C55))
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    Button(
+                        onClick = {
+                            if (title.isBlank()) {
+                                error = true
+                                return@Button
+                            }
+                            onSave(title.trim(), timePickerState.hour, timePickerState.minute)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = CalendarChip)
+                    ) {
+                        Text("Save")
+                    }
+                }
+            }
+        }
+    }
+
+    if (showTimePicker) {
+        Dialog(onDismissRequest = { showTimePicker = false }) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color.White
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text("Select time", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    TimePicker(state = timePickerState)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        TextButton(onClick = { showTimePicker = false }) { Text("Cancel") }
+                        Button(
+                            onClick = { showTimePicker = false },
+                            colors = ButtonDefaults.buttonColors(containerColor = CalendarChip)
+                        ) {
+                            Text("Confirm")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun monthYearLabel(timestamp: Long): String {
+    val format = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+    return format.format(Date(timestamp)).replaceFirstChar { it.uppercaseChar() }
+}
+
+private fun formatDate(timestamp: Long): String {
+    val format = SimpleDateFormat("EEE, MMM d", Locale.getDefault())
+    return format.format(Date(timestamp))
+}
+
+private fun formatDateTime(timestamp: Long): String {
+    val format = SimpleDateFormat("EEE, MMM d * h:mm a", Locale.getDefault())
+    return format.format(Date(timestamp))
+}
+
+private fun formatTime(hour: Int, minute: Int): String {
+    val hour12 = if (hour % 12 == 0) 12 else hour % 12
+    val amPm = if (hour < 12) "AM" else "PM"
+    return String.format(Locale.US, "%d:%02d %s", hour12, minute, amPm)
+}
+
+private data class DayCell(val day: Int?, val dateMillis: Long?)
+
+private fun buildMonthGrid(year: Int, month: Int): List<DayCell> {
+    val cal = Calendar.getInstance().apply {
+        set(Calendar.YEAR, year)
+        set(Calendar.MONTH, month)
+        set(Calendar.DAY_OF_MONTH, 1)
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    val firstDayOfWeek = cal.get(Calendar.DAY_OF_WEEK) - 1
+    val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+    val cells = mutableListOf<DayCell>()
+    repeat(firstDayOfWeek) { cells.add(DayCell(null, null)) }
+    for (day in 1..daysInMonth) {
+        cal.set(Calendar.DAY_OF_MONTH, day)
+        cells.add(DayCell(day, cal.timeInMillis))
+    }
+    while (cells.size % 7 != 0) {
+        cells.add(DayCell(null, null))
+    }
+    return cells
+}
+
+private fun isSameDay(a: Long?, b: Long?): Boolean {
+    if (a == null || b == null) return false
+    val calA = Calendar.getInstance().apply { timeInMillis = a }
+    val calB = Calendar.getInstance().apply { timeInMillis = b }
+    return calA.get(Calendar.YEAR) == calB.get(Calendar.YEAR) &&
+        calA.get(Calendar.MONTH) == calB.get(Calendar.MONTH) &&
+        calA.get(Calendar.DAY_OF_MONTH) == calB.get(Calendar.DAY_OF_MONTH)
+}
+
+private fun startOfMonth(timestamp: Long): Long {
+    val cal = Calendar.getInstance().apply {
+        timeInMillis = timestamp
+        set(Calendar.DAY_OF_MONTH, 1)
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    return cal.timeInMillis
+}
