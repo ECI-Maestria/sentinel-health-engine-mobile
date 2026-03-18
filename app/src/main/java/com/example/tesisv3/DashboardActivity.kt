@@ -3,6 +3,7 @@ package com.example.tesisv3
 import android.os.Build
 import android.os.Bundle
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -27,6 +28,9 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,8 +39,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +52,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class DashboardActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,6 +84,11 @@ private val DashboardNav = Color(0xFF58725E)
 @Composable
 private fun DashboardScreen(onBack: () -> Unit) {
     var selectedNav by remember { mutableIntStateOf(0) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isSyncing by remember { mutableStateOf(false) }
+    var syncDetails by remember { mutableStateOf<String?>(null) }
+    var showSyncDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = DashboardBackground,
@@ -102,6 +116,70 @@ private fun DashboardScreen(onBack: () -> Unit) {
         ) {
             item {
                 DashboardTopBar(onBack = onBack)
+            }
+
+            item {
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    color = Color.White,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("Sync", color = DashboardText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "Send data to IoT Hub",
+                                color = DashboardMuted,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                if (isSyncing) return@Button
+                                isSyncing = true
+                                scope.launch(Dispatchers.IO) {
+                                    val result = AzureIotClient.sendSyncMessage(
+                                        BuildConfig.AZURE_IOT_CONNECTION_STRING,
+                                        """{ "action": "sync" }"""
+                                    )
+                                    withContext(Dispatchers.Main) {
+                                        isSyncing = false
+                                        val details = buildString {
+                                            append("Success: ${result.success}\n")
+                                            append("HTTP: ${result.code ?: "N/A"}\n")
+                                            append("Body: ${result.body ?: "N/A"}\n")
+                                            append("Error: ${result.error ?: "N/A"}")
+                                        }
+                                        syncDetails = details
+                                        showSyncDialog = true
+                                        if (result.success) {
+                                            Toast.makeText(context, "Sync sent", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "Sync failed: ${result.error ?: "Unknown error"}",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = DashboardChip),
+                            shape = RoundedCornerShape(16.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Text(if (isSyncing) "Sending..." else "Sync", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
 
             item {
@@ -142,6 +220,17 @@ private fun DashboardScreen(onBack: () -> Unit) {
                 OverviewCard()
             }
         }
+    }
+
+    if (showSyncDialog && syncDetails != null) {
+        AlertDialog(
+            onDismissRequest = { showSyncDialog = false },
+            title = { Text("Sync result") },
+            text = { Text(syncDetails ?: "") },
+            confirmButton = {
+                Button(onClick = { showSyncDialog = false }) { Text("OK") }
+            }
+        )
     }
 }
 
