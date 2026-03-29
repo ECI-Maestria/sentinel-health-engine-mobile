@@ -48,6 +48,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import com.google.firebase.messaging.FirebaseMessaging
 
 class LoginActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -142,8 +143,11 @@ private fun LoginScreen(onLoginSuccess: () -> Unit) {
                     )
 
                     if (showError) {
+                        var DeviceID = FirebaseMessaging.getInstance().token
+                        //DeviceID: zzw@36545    || dEaLTmBcShiD0-L7sPvz1k:APA91bGuxrv7Sk3Wn5xp71TMhGm3LwzJmkA12ckJpMbAFJLp0Zz6Dw8iXEvr6iNiRNhWy91HwCWta8_3mISnLAT3ddOTARYpr6SUn1GanjtT0DYSNVAAuEg
+                        //zzW@f81c25a
                         Text(
-                            text = "Invalid user or password",
+                            text = "Invalid user or password ",
                             color = Color(0xFFD35C55),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold

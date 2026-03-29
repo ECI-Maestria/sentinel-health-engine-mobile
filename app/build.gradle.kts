@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.jetbrains.kotlin.kapt)
+    id("com.google.gms.google-services")
 }
 
 val localProperties = Properties()
@@ -41,7 +42,7 @@ android {
     buildTypes {
         debug {
             isDebuggable = true
-            isMinifyEnabled = true
+            isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -75,10 +76,20 @@ android {
         }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/INDEX.LIST"
+            excludes += "/META-INF/io.netty.versions.properties"
+            excludes += "/META-INF/LICENSE.md"
+            pickFirsts += "/META-INF/LICENSE.md"
+            excludes += "/META-INF/NOTICE.md"
+            pickFirsts += "/META-INF/NOTICE.md"
         }
     }
 }
 dependencies {
+    implementation("com.microsoft.azure.sdk.iot:iot-device-client:1.30.1")
+    implementation(platform("com.google.firebase:firebase-bom:34.11.0"))
+    implementation("com.google.firebase:firebase-messaging")
+    implementation("com.google.firebase:firebase-analytics")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("androidx.room:room-runtime:2.7.0")
     implementation("androidx.room:room-ktx:2.7.0")

@@ -34,9 +34,14 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.DrawerValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -89,135 +94,181 @@ private fun DashboardScreen(onBack: () -> Unit) {
     var isSyncing by remember { mutableStateOf(false) }
     var syncDetails by remember { mutableStateOf<String?>(null) }
     var showSyncDialog by remember { mutableStateOf(false) }
+    var transportType by remember { mutableStateOf(IotSettings.getTransport(context)) }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
-    Scaffold(
-        containerColor = DashboardBackground,
-        bottomBar = {
-            AppBottomNav(
-                current = BottomNavDestination.DASHBOARD,
-                modifier = Modifier.navigationBarsPadding(),
-                indicatorColor = DashboardCard,
-                selectedColor = DashboardNav,
-                unselectedColor = DashboardNav.copy(alpha = 0.55f)
-            )
-        }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(DashboardBackground),
-            contentPadding = PaddingValues(
-                start = 18.dp,
-                top = innerPadding.calculateTopPadding() + 12.dp,
-                end = 18.dp,
-                bottom = innerPadding.calculateBottomPadding() + 20.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
-        ) {
-            item {
-                DashboardTopBar(onBack = onBack)
-            }
-
-            item {
-                Surface(
-                    shape = RoundedCornerShape(22.dp),
-                    color = Color.White,
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Text("Menu", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Button(
+                        onClick = {
+                            context.startActivity(Intent(context, SettingsActivity::class.java))
+                            scope.launch { drawerState.close() }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = DashboardChip),
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                     ) {
-                        Column {
-                            Text("Sync", color = DashboardText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            Text(
-                                text = "Send data to IoT Hub",
-                                color = DashboardMuted,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        Button(
-                            onClick = {
-                                if (isSyncing) return@Button
-                                isSyncing = true
-                                scope.launch(Dispatchers.IO) {
-                                    val result = AzureIotClient.sendSyncMessage(
-                                        BuildConfig.AZURE_IOT_CONNECTION_STRING,
-                                        """{ "action": "sync" }"""
-                                    )
-                                    withContext(Dispatchers.Main) {
-                                        isSyncing = false
-                                        val details = buildString {
-                                            append("Success: ${result.success}\n")
-                                            append("HTTP: ${result.code ?: "N/A"}\n")
-                                            append("Body: ${result.body ?: "N/A"}\n")
-                                            append("Error: ${result.error ?: "N/A"}")
-                                        }
-                                        syncDetails = details
-                                        showSyncDialog = true
-                                        if (result.success) {
-                                            Toast.makeText(context, "Sync sent", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                "Sync failed: ${result.error ?: "Unknown error"}",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        }
-                                    }
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = DashboardChip),
-                            shape = RoundedCornerShape(16.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                        ) {
-                            Text(if (isSyncing) "Sending..." else "Sync", fontWeight = FontWeight.Bold)
-                        }
+                        Text("Settings", fontWeight = FontWeight.Bold)
                     }
                 }
             }
-
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    MetricCard(
-                        modifier = Modifier.weight(1f),
-                        title = "Steps Today",
-                        value = "8,942",
-                        detail = "Goal 10,000"
-                    )
-                    MetricCard(
-                        modifier = Modifier.weight(1f),
-                        title = "Sleep",
-                        value = "7h 15m",
-                        detail = "Quality Good"
-                    )
-                }
+        }
+    ) {
+        Scaffold(
+            containerColor = DashboardBackground,
+            bottomBar = {
+                AppBottomNav(
+                    current = BottomNavDestination.DASHBOARD,
+                    modifier = Modifier.navigationBarsPadding(),
+                    indicatorColor = DashboardCard,
+                    selectedColor = DashboardNav,
+                    unselectedColor = DashboardNav.copy(alpha = 0.55f)
+                )
             }
-
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    MetricCard(
-                        modifier = Modifier.weight(1f),
-                        title = "Heart Rate",
-                        value = "72 bpm",
-                        detail = "Resting"
-                    )
-                    MetricCard(
-                        modifier = Modifier.weight(1f),
-                        title = "Glucose",
-                        value = "2405",
-                        detail = "+33 % vs last month"
-                    )
+        ) { innerPadding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(DashboardBackground),
+                contentPadding = PaddingValues(
+                    start = 18.dp,
+                    top = innerPadding.calculateTopPadding() + 12.dp,
+                    end = 18.dp,
+                    bottom = innerPadding.calculateBottomPadding() + 20.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                item {
+                    DashboardTopBar(onMenu = { scope.launch { drawerState.open() } })
                 }
-            }
 
-            item {
-                OverviewCard()
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        color = Color.White,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("Sync", color = DashboardText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "Send data to IoT Hub (${transportType.name})",
+                                    color = DashboardMuted,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        context.startActivity(Intent(context, SettingsActivity::class.java))
+                                        transportType = IotSettings.getTransport(context)
+                                    }
+                                ) {
+                                    Text("Settings")
+                                }
+                                Button(
+                                    onClick = {
+                                        if (isSyncing) return@Button
+                                        isSyncing = true
+                                        scope.launch(Dispatchers.IO) {
+                                            val transport: IotTransport = when (IotSettings.getTransport(context)) {
+                                                TransportType.MQTT -> MqttTransport
+                                                TransportType.HTTP -> HttpTransport
+                                            }
+                                            val result = transport.sendSyncMessage(
+                                                BuildConfig.AZURE_IOT_CONNECTION_STRING,
+                                                """{ "action": "sync" }"""
+                                            )
+                                            withContext(Dispatchers.Main) {
+                                                isSyncing = false
+                                                val details = buildString {
+                                                    append("Success: ${result.success}\n")
+                                                    append("HTTP: ${result.code ?: "N/A"}\n")
+                                                    append("Body: ${result.body ?: "N/A"}\n")
+                                                    append("Error: ${result.error ?: "N/A"}")
+                                                }
+                                                syncDetails = details
+                                                showSyncDialog = true
+                                                if (result.success) {
+                                                    Toast.makeText(context, "Sync sent", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "Sync failed: ${result.error ?: "Unknown error"}",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                }
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = DashboardChip),
+                                    shape = RoundedCornerShape(16.dp),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                ) {
+                                    Text(if (isSyncing) "Sending..." else "Sync", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MetricCard(
+                            modifier = Modifier.weight(1f),
+                            title = "Steps Today",
+                            value = "8,942",
+                            detail = "Goal 10,000"
+                        )
+                        MetricCard(
+                            modifier = Modifier.weight(1f),
+                            title = "Sleep",
+                            value = "7h 15m",
+                            detail = "Quality Good"
+                        )
+                    }
+                }
+
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MetricCard(
+                            modifier = Modifier.weight(1f),
+                            title = "Heart Rate",
+                            value = "72 bpm",
+                            detail = "Resting"
+                        )
+                        MetricCard(
+                            modifier = Modifier.weight(1f),
+                            title = "Glucose",
+                            value = "2405",
+                            detail = "+33 % vs last month"
+                        )
+                    }
+                }
+
+                item {
+                    OverviewCard()
+                }
             }
         }
     }
@@ -235,15 +286,15 @@ private fun DashboardScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun DashboardTopBar(onBack: () -> Unit) {
+private fun DashboardTopBar(onMenu: () -> Unit) {
     val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.Filled.Menu, contentDescription = "Back", tint = DashboardNav)
+        IconButton(onClick = onMenu) {
+            Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = DashboardNav)
         }
 
         Box(

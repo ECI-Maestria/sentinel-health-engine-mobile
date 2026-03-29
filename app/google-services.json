@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1066077094483",
+    "project_id": "sentinel-health-engine",
+    "storage_bucket": "sentinel-health-engine.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1066077094483:android:12794cc1cb01a9c2703ca6",
+        "android_client_info": {
+          "package_name": "com.example.tesisv3"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD7mSunyz59gApeVk9iyDuRLcdXQNbP9_I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
