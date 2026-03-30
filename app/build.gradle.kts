@@ -15,6 +15,7 @@ if (localPropertiesFile.exists()) {
     localPropertiesFile.inputStream().use { localProperties.load(it) }
 }
 val azureIotConnectionString = localProperties.getProperty("azureIotConnectionString") ?: ""
+val azureIotHostName = localProperties.getProperty("HostName") ?: ""
 
 android {
     namespace = "com.example.tesisv3"
@@ -31,6 +32,11 @@ android {
             "String",
             "AZURE_IOT_CONNECTION_STRING",
             "\"${azureIotConnectionString}\""
+        )
+        buildConfigField(
+            "String",
+            "AZURE_IOT_HOST_NAME",
+            "\"${azureIotHostName}\""
         )
     }
     buildFeatures {
@@ -86,7 +92,9 @@ android {
     }
 }
 dependencies {
-    implementation("com.microsoft.azure.sdk.iot:iot-device-client:1.30.1")
+    implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")
+    implementation("org.conscrypt:conscrypt-android:2.5.2")
+    implementation("com.google.android.gms:play-services-base:18.5.0")
     implementation(platform("com.google.firebase:firebase-bom:34.11.0"))
     implementation("com.google.firebase:firebase-messaging")
     implementation("com.google.firebase:firebase-analytics")

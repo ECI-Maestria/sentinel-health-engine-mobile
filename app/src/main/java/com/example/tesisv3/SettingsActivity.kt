@@ -28,6 +28,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +71,7 @@ private val SettingsNav = Color(0xFF5A7A63)
 private fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var transport by remember { mutableStateOf(IotSettings.getTransport(context)) }
+    var diagnostic by remember { mutableStateOf(IotSettings.isDiagnosticEnabled(context)) }
 
     Column(
         modifier = Modifier
@@ -107,13 +110,57 @@ private fun SettingsScreen(onBack: () -> Unit) {
                     }
                 )
                 TransportOption(
-                    title = "MQTT",
-                    description = "Persistent connection, better for frequent data.",
+                    title = "MQTT (port 8883)",
+                    description = "Direct MQTT, may be blocked on some networks.",
                     selected = transport == TransportType.MQTT,
                     onClick = {
                         transport = TransportType.MQTT
                         IotSettings.setTransport(context, TransportType.MQTT)
                     }
+                )
+                TransportOption(
+                    title = "MQTT over WebSockets",
+                    description = "More compatible on mobile/firewalls.",
+                    selected = transport == TransportType.MQTT_WS,
+                    onClick = {
+                        transport = TransportType.MQTT_WS
+                        IotSettings.setTransport(context, TransportType.MQTT_WS)
+                    }
+                )
+            }
+        }
+
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = SettingsCard
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("MQTT Diagnostic Mode", color = SettingsText, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Show detailed MQTT connection errors in Sync result.",
+                        color = SettingsMuted,
+                        fontSize = 12.sp
+                    )
+                }
+                Switch(
+                    checked = diagnostic,
+                    onCheckedChange = {
+                        diagnostic = it
+                        IotSettings.setDiagnosticEnabled(context, it)
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = SettingsChip,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = SettingsChipAlt
+                    )
                 )
             }
         }

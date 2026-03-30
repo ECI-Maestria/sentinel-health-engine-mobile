@@ -2,11 +2,12 @@ package com.example.tesisv3
 
 import android.content.Context
 
-enum class TransportType { HTTP, MQTT }
+enum class TransportType { HTTP, MQTT, MQTT_WS }
 
 object IotSettings {
     private const val PREFS = "iot_settings"
     private const val KEY_TRANSPORT = "transport"
+    private const val KEY_DIAGNOSTIC = "mqtt_diagnostic"
 
     fun getTransport(context: Context): TransportType {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -17,5 +18,15 @@ object IotSettings {
     fun setTransport(context: Context, type: TransportType) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.edit().putString(KEY_TRANSPORT, type.name).apply()
+    }
+
+    fun isDiagnosticEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_DIAGNOSTIC, false)
+    }
+
+    fun setDiagnosticEnabled(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_DIAGNOSTIC, enabled).apply()
     }
 }

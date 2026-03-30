@@ -5,6 +5,12 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.google.android.material.color.DynamicColors
+import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.common.GooglePlayServicesNotAvailableException
+import com.google.android.gms.common.GooglePlayServicesRepairableException
+import com.google.android.gms.security.ProviderInstaller
+import org.conscrypt.Conscrypt
+import java.security.Security
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
@@ -12,7 +18,14 @@ class MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        Security.insertProviderAt(Conscrypt.newProvider(), 1)
+        try {
+            ProviderInstaller.installIfNeeded(this)
+        } catch (_: GooglePlayServicesRepairableException) {
+        } catch (_: GooglePlayServicesNotAvailableException) {
+        }
         DynamicColors.applyToActivitiesIfAvailable(this)
+        AppContextHolder.init(this)
         scheduleDailyReset()
     }
 

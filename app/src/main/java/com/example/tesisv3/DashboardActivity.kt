@@ -60,6 +60,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.URL
+import javax.net.ssl.HttpsURLConnection
 
 class DashboardActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,6 +98,10 @@ private fun DashboardScreen(onBack: () -> Unit) {
     var showSyncDialog by remember { mutableStateOf(false) }
     var transportType by remember { mutableStateOf(IotSettings.getTransport(context)) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    var tlsDetails by remember { mutableStateOf<String?>(null) }
+    var showTlsDialog by remember { mutableStateOf(false) }
+    var mqttDetails by remember { mutableStateOf<String?>(null) }
+    var showMqttDialog by remember { mutableStateOf(false) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -191,22 +197,36 @@ private fun DashboardScreen(onBack: () -> Unit) {
                                         if (isSyncing) return@Button
                                         isSyncing = true
                                         scope.launch(Dispatchers.IO) {
-                                            val transport: IotTransport = when (IotSettings.getTransport(context)) {
-                                                TransportType.MQTT -> MqttTransport
-                                                TransportType.HTTP -> HttpTransport
+                                    val transport: IotTransport = when (IotSettings.getTransport(context)) {
+                                        TransportType.HTTP -> HttpTransport
+                                        TransportType.MQTT, TransportType.MQTT_WS -> MqttTransport
+                                    }
+                                            val transportType = IotSettings.getTransport(context)
+                                            val payload = buildString {
+                                                append("""{ "action": "sync", "transport": """")
+                                                append(transportType.name)
+                                                append("""" }""")
                                             }
                                             val result = transport.sendSyncMessage(
                                                 BuildConfig.AZURE_IOT_CONNECTION_STRING,
-                                                """{ "action": "sync" }"""
+                                                payload
                                             )
                                             withContext(Dispatchers.Main) {
                                                 isSyncing = false
-                                                val details = buildString {
-                                                    append("Success: ${result.success}\n")
-                                                    append("HTTP: ${result.code ?: "N/A"}\n")
-                                                    append("Body: ${result.body ?: "N/A"}\n")
-                                                    append("Error: ${result.error ?: "N/A"}")
+                                        val details = buildString {
+                                            append("Success: ${result.success}\n")
+                                            append("HTTP: ${result.code ?: "N/A"}\n")
+                                            append("Body: ${result.body ?: "N/A"}\n")
+                                            append("Error: ${result.error ?: "N/A"}")
+                                            if (IotSettings.isDiagnosticEnabled(context) &&
+                                                IotSettings.getTransport(context) != TransportType.HTTP
+                                            ) {
+                                                val diag = MqttTransport.getLastDiagnostic()
+                                                if (!diag.isNullOrBlank()) {
+                                                    append("\nMQTT: ").append(diag)
                                                 }
+                                            }
+                                        }
                                                 syncDetails = details
                                                 showSyncDialog = true
                                                 if (result.success) {
@@ -227,6 +247,95 @@ private fun DashboardScreen(onBack: () -> Unit) {
                                 ) {
                                     Text(if (isSyncing) "Sending..." else "Sync", fontWeight = FontWeight.Bold)
                                 }
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        color = Color.White,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("TLS Check", color = DashboardText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "Verify TLS to azure-devices.net",
+                                    color = DashboardMuted,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    scope.launch(Dispatchers.IO) {
+                                        val result = runTlsCheck()
+                                        withContext(Dispatchers.Main) {
+                                            tlsDetails = result
+                                            showTlsDialog = true
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = DashboardChip),
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Text("Check", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        color = Color.White,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("MQTT Check", color = DashboardText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "Test MQTT connection only",
+                                    color = DashboardMuted,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    scope.launch(Dispatchers.IO) {
+                                        val result = MqttTransport.testConnection(
+                                            BuildConfig.AZURE_IOT_CONNECTION_STRING,
+                                            IotSettings.getTransport(context)
+                                        )
+                                        withContext(Dispatchers.Main) {
+                                            mqttDetails = result
+                                            showMqttDialog = true
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = DashboardChip),
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Text("Check", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -280,6 +389,28 @@ private fun DashboardScreen(onBack: () -> Unit) {
             text = { Text(syncDetails ?: "") },
             confirmButton = {
                 Button(onClick = { showSyncDialog = false }) { Text("OK") }
+            }
+        )
+    }
+
+    if (showTlsDialog && tlsDetails != null) {
+        AlertDialog(
+            onDismissRequest = { showTlsDialog = false },
+            title = { Text("TLS check") },
+            text = { Text(tlsDetails ?: "") },
+            confirmButton = {
+                Button(onClick = { showTlsDialog = false }) { Text("OK") }
+            }
+        )
+    }
+
+    if (showMqttDialog && mqttDetails != null) {
+        AlertDialog(
+            onDismissRequest = { showMqttDialog = false },
+            title = { Text("MQTT check") },
+            text = { Text(mqttDetails ?: "") },
+            confirmButton = {
+                Button(onClick = { showMqttDialog = false }) { Text("OK") }
             }
         )
     }
@@ -456,4 +587,25 @@ private fun LegendDot(color: Color) {
             .clip(CircleShape)
             .background(color)
     )
+}
+
+private fun runTlsCheck(): String {
+    return try {
+        val host = BuildConfig.AZURE_IOT_HOST_NAME.ifBlank { "azure-devices.net" }
+        val url = URL("https://$host")
+        val conn = (url.openConnection() as HttpsURLConnection).apply {
+            connectTimeout = 8000
+            readTimeout = 8000
+            requestMethod = "GET"
+        }
+        conn.connect()
+        val code = conn.responseCode
+        val cipher = conn.cipherSuite ?: "N/A"
+        val protocol = conn.url.protocol ?: "N/A"
+        conn.disconnect()
+        "Success\nHTTP: $code\nProtocol: $protocol\nCipher: $cipher"
+    } catch (e: Exception) {
+        val cause = e.cause?.let { " | Cause: ${it.javaClass.simpleName}: ${it.message}" } ?: ""
+        "Failed: ${e.javaClass.simpleName}: ${e.message}$cause"
+    }
 }
