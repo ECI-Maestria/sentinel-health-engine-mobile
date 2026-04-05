@@ -1,8 +1,12 @@
 package com.example.tesisv3
 
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -48,10 +52,23 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.app.ActivityCompat
 import com.google.firebase.messaging.FirebaseMessaging
 
 class LoginActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        ActivityCompat.requestPermissions(this,
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "sentinel_alerts",
+                "Alertas de Signos Vitales",
+                NotificationManager.IMPORTANCE_HIGH
+            )
+            channel.description = "Alertas críticas del Sentinel Health Engine"
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
             enableEdgeToEdge()
         }
@@ -143,6 +160,9 @@ private fun LoginScreen(onLoginSuccess: () -> Unit) {
                     )
 
                     if (showError) {
+                        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                            Log.d("FCM", "Token: ${task.result}")
+                        }
                         var DeviceID = FirebaseMessaging.getInstance().token
                         //DeviceID: zzw@36545    || dEaLTmBcShiD0-L7sPvz1k:APA91bGuxrv7Sk3Wn5xp71TMhGm3LwzJmkA12ckJpMbAFJLp0Zz6Dw8iXEvr6iNiRNhWy91HwCWta8_3mISnLAT3ddOTARYpr6SUn1GanjtT0DYSNVAAuEg
                         //zzW@f81c25a

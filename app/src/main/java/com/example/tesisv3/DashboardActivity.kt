@@ -61,6 +61,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.URL
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import javax.net.ssl.HttpsURLConnection
 
 class DashboardActivity : ComponentActivity() {
@@ -203,8 +205,8 @@ private fun DashboardScreen(onBack: () -> Unit) {
                                     }
                                             val transportType = IotSettings.getTransport(context)
                                             val payload = buildString {
-                                                append("""{ "action": "sync", "transport": """")
-                                                append(transportType.name)
+                                                append("""{ "deviceId": "mobile-gateway-01", "heartRate": 145, "spO2": 88, "timestamp": """")
+                                                append(Instant.now().truncatedTo(ChronoUnit.SECONDS).toString())
                                                 append("""" }""")
                                             }
                                             val result = transport.sendSyncMessage(
