@@ -66,11 +66,20 @@ import androidx.compose.ui.window.Dialog
 import com.example.tesisv3.data.AppDatabase
 import com.example.tesisv3.data.AppointmentEntity
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 class CalendarActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -221,6 +230,16 @@ private fun CalendarScreen(onBack: () -> Unit) {
                         dao.insert(entity)
                     } else {
                         dao.update(entity)
+                    }
+                    val reminderAt = toUtcIsoString(cal.timeInMillis)
+                    withContext(Dispatchers.IO) {
+                        sendReminderRequest(
+                            patientId = PatientSession.patientId,
+                            title = title,
+                            message = "Reminder: $title",
+                            reminderAt = reminderAt,
+                            recurrence = "DAILY"
+                        )
                     }
                 }
                 showAddDialog = false
@@ -588,6 +607,57 @@ private fun formatTime(hour: Int, minute: Int): String {
     val hour12 = if (hour % 12 == 0) 12 else hour % 12
     val amPm = if (hour < 12) "AM" else "PM"
     return String.format(Locale.US, "%d:%02d %s", hour12, minute, amPm)
+}
+
+private fun toUtcIsoString(timestamp: Long): String {
+    return DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(timestamp).atZone(ZoneOffset.UTC))
+}
+
+private fun sendReminderRequest(
+    patientId: String,
+    title: String,
+    message: String,
+    reminderAt: String,
+    recurrence: String
+) {
+    if (patientId.isBlank()) return
+    val url = URL("http://localhost:8085/v1/patients/$patientId/reminders")
+    val payload = """{
+        "title":"${escapeJson(title)}",
+        "message":"${escapeJson(message)}",
+        "reminderAt":"${escapeJson(reminderAt)}",
+        "recurrence":"${escapeJson(recurrence)}"
+    }""".trimIndent()
+    try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            setRequestProperty("Content-Type", "application/json")
+            PatientSession.accessToken?.let {
+                setRequestProperty("Authorization", "Bearer $it")
+            }
+            connectTimeout = 10000
+            readTimeout = 10000
+            doOutput = true
+        }
+        conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+        val code = conn.responseCode
+        readStream(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+    } catch (_: Exception) {
+    }
+}
+
+private fun escapeJson(value: String): String {
+    return value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+}
+
+private fun readStream(stream: java.io.InputStream?) {
+    if (stream == null) return
+    BufferedReader(InputStreamReader(stream)).use { it.readText() }
 }
 
 private data class DayCell(val day: Int?, val dateMillis: Long?)
