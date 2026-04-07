@@ -43,17 +43,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
 
 class ForgotPasswordActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,11 +73,9 @@ private val ForgotAccentSoft = Color(0xFFE3F4EA)
 
 @Composable
 private fun ForgotPasswordScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var step by remember { mutableStateOf(1) }
     var email by remember { mutableStateOf("") }
-    var token by remember { mutableStateOf("") }
-    var newPassword by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
 
@@ -113,7 +107,7 @@ private fun ForgotPasswordScreen(onBack: () -> Unit) {
                 }
                 Spacer(Modifier.size(12.dp))
                 Text(
-                    text = if (step == 1) "Recuperar Contraseña" else "Restablecer Contraseña",
+                    text = "Recuperar Contraseña",
                     color = ForgotText,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
@@ -140,17 +134,14 @@ private fun ForgotPasswordScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(16.dp))
 
             Text(
-                text = if (step == 1) "¿Olvidaste tu contraseña?" else "Ingresa tu código",
+                text = "¿Olvidaste tu contraseña?",
                 color = ForgotText,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = if (step == 1)
-                    "Ingresa tu correo y te enviaremos un código para restablecer tu contraseña."
-                else
-                    "Ingresa el token recibido y tu nueva contraseña.",
+                text = "Ingresa tu correo y te enviaremos un código para restablecer tu contraseña.",
                 color = ForgotMuted,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold
@@ -158,70 +149,39 @@ private fun ForgotPasswordScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(18.dp))
 
-            if (step == 1) {
-                Text("Correo electrónico", color = ForgotText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Start))
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it; message = "" },
-                    placeholder = { Text("tu@correo.com") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                )
-            } else {
-                Text("Token", color = ForgotText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Start))
-                OutlinedTextField(
-                    value = token,
-                    onValueChange = { token = it; message = "" },
-                    placeholder = { Text("Código") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                )
-                Spacer(Modifier.height(10.dp))
-                Text("Nueva contraseña", color = ForgotText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Start))
-                OutlinedTextField(
-                    value = newPassword,
-                    onValueChange = { newPassword = it; message = "" },
-                    placeholder = { Text("••••••••") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                )
-            }
+            Text("Correo electrónico", color = ForgotText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Start))
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it; message = "" },
+                placeholder = { Text("tu@correo.com") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp)
+            )
 
             Spacer(Modifier.height(18.dp))
 
             Button(
                 onClick = {
                     if (isSubmitting) return@Button
-                    if (step == 1 && email.isBlank()) {
+                    if (email.isBlank()) {
                         message = "Por favor ingresa tu correo"
-                        return@Button
-                    }
-                    if (step == 2 && (token.isBlank() || newPassword.isBlank())) {
-                        message = "Completa los campos requeridos"
                         return@Button
                     }
                     isSubmitting = true
                     scope.launch {
                         val result = withContext(Dispatchers.IO) {
-                            if (step == 1) {
-                                requestForgotPassword(email.trim())
-                            } else {
-                                requestResetPassword(token.trim(), newPassword.trim())
-                            }
+                            requestForgotPassword(email.trim())
                         }
                         isSubmitting = false
                         if (result.success) {
-                            if (step == 1) {
-                                message = "El código fue enviado a tu correo."
-                                step = 2
-                            } else {
-                                message = "Contraseña actualizada. Inicia sesión."
-                                onBack()
+                            val intent = android.content.Intent(
+                                context,
+                                VerifyResetCodeActivity::class.java
+                            ).apply {
+                                putExtra("email", email.trim())
                             }
+                            context.startActivity(intent)
                         } else {
                             message = result.message
                         }
@@ -233,7 +193,7 @@ private fun ForgotPasswordScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = if (isSubmitting) "Enviando..." else if (step == 1) "Enviar código" else "Restablecer",
+                    text = if (isSubmitting) "Enviando..." else "Enviar código",
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp
                 )
@@ -247,7 +207,7 @@ private fun ForgotPasswordScreen(onBack: () -> Unit) {
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
-            } else if (step == 1) {
+            } else {
                 Text(
                     text = "El código expira en 1 hora. Revisa tu bandeja de entrada.",
                     color = ForgotMuted,
@@ -257,67 +217,4 @@ private fun ForgotPasswordScreen(onBack: () -> Unit) {
             }
         }
     }
-}
-
-private data class ForgotResult(val success: Boolean, val message: String)
-
-private fun requestForgotPassword(email: String): ForgotResult {
-    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/auth/forgot-password")
-    val payload = """{"email":"${escapeJson(email.trim())}"}"""
-    return try {
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            setRequestProperty("Content-Type", "application/json")
-            connectTimeout = 10000
-            readTimeout = 10000
-            doOutput = true
-        }
-        conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-        val code = conn.responseCode
-        val body = readStream(if (code in 200..299) conn.inputStream else conn.errorStream)
-        conn.disconnect()
-        when {
-            code in 200..299 -> ForgotResult(true, "")
-            else -> ForgotResult(false, body.ifBlank { "Request failed (HTTP $code)" })
-        }
-    } catch (e: Exception) {
-        ForgotResult(false, e.message ?: "Network error")
-    }
-}
-
-private fun requestResetPassword(token: String, newPassword: String): ForgotResult {
-    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/auth/reset-password")
-    val payload = """{"token":"${escapeJson(token.trim())}","newPassword":"${escapeJson(newPassword.trim())}"}"""
-    return try {
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            setRequestProperty("Content-Type", "application/json")
-            connectTimeout = 10000
-            readTimeout = 10000
-            doOutput = true
-        }
-        conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-        val code = conn.responseCode
-        val body = readStream(if (code in 200..299) conn.inputStream else conn.errorStream)
-        conn.disconnect()
-        when {
-            code in 200..299 -> ForgotResult(true, "")
-            else -> ForgotResult(false, body.ifBlank { "Reset failed (HTTP $code)" })
-        }
-    } catch (e: Exception) {
-        ForgotResult(false, e.message ?: "Network error")
-    }
-}
-
-private fun readStream(stream: java.io.InputStream?): String {
-    if (stream == null) return ""
-    return BufferedReader(InputStreamReader(stream)).use { it.readText() }
-}
-
-private fun escapeJson(value: String): String {
-    return value
-        .replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
 }

@@ -5,6 +5,7 @@ object PatientSession {
     @Volatile var currentUser: UserProfile? = null
     @Volatile var accessToken: String? = null
     @Volatile var refreshToken: String? = null
+    @Volatile var resetCode: String? = null
 }
 
 data class UserProfile(

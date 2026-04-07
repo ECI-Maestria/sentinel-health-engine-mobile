@@ -9,7 +9,6 @@ import com.google.firebase.messaging.RemoteMessage
 class MyFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
-        // Esto se llama cuando la app está en FOREGROUND
         val title = remoteMessage.notification?.title ?: "Alerta de Signos Vitales"
         val body = remoteMessage.notification?.body ?: ""
 
@@ -18,7 +17,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         val notification = NotificationCompat.Builder(this, "sentinel_alerts")
             .setContentTitle(title)
             .setContentText(body)
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // icono de la app
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .build()
