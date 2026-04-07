@@ -63,6 +63,24 @@
             tools:targetApi="n" />
 
         <activity
+            android:name=".DoctorPatientsActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            tools:targetApi="n" />
+
+        <activity
+            android:name=".CaretakerRegistrationActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            tools:targetApi="n" />
+
+        <activity
+            android:name=".ForgotPasswordActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            tools:targetApi="n" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="false"
             android:resizeableActivity="true"

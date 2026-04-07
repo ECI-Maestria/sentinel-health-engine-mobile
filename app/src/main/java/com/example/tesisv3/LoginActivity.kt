@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -18,16 +17,21 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.PersonAddAlt1
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -49,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -56,7 +61,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.ActivityCompat
-import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -89,8 +93,15 @@ class LoginActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 LoginScreen(
-                    onLoginSuccess = {
-                        startActivity(Intent(this, DashboardActivity::class.java))
+                    onLoginDestination = { destination ->
+                        when (destination) {
+                            LoginDestination.DASHBOARD -> {
+                                startActivity(Intent(this, DashboardActivity::class.java))
+                            }
+                            LoginDestination.DOCTOR -> {
+                                startActivity(Intent(this, DoctorPatientsActivity::class.java))
+                            }
+                        }
                         finish()
                     }
                 )
@@ -104,207 +115,269 @@ private val LoginText = Color(0xFF2E3F35)
 private val LoginMuted = Color(0xFF7B8C81)
 private val LoginChip = Color(0xFF5BCB90)
 private val LoginChipAlt = Color(0xFFE1F2E6)
-private val LoginNav = Color(0xFF5A7A63)
+private val LoginHero = Color(0xFF2F8A5B)
+private val LoginHeroDark = Color(0xFF2A7C52)
 
 @Composable
-private fun LoginScreen(onLoginSuccess: () -> Unit) {
+private fun LoginScreen(onLoginDestination: (LoginDestination) -> Unit) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var showPassword by remember { mutableStateOf(false) }
-    var showChangePassword by remember { mutableStateOf(false) }
-    var showForgotPassword by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
-    Scaffold(containerColor = LoginBackground) { innerPadding ->
+    Scaffold(
+        containerColor = LoginBackground,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
+    ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(LoginBackground)
-                .padding(
-                    start = 22.dp,
-                    top = innerPadding.calculateTopPadding() + 14.dp,
-                    end = 22.dp,
-                    bottom = innerPadding.calculateBottomPadding() + 22.dp
-                ),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+                .padding(innerPadding)
+                .imePadding()
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.Top
         ) {
-            LoginTopBar()
-
-            Spacer(Modifier.height(8.dp))
-
-            Text(
-                text = "Welcome back",
-                color = LoginText,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Please sign in to continue",
-                color = LoginMuted,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            Card(
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(LoginHero)
+                    .statusBarsPadding()
+                    .padding(top = 24.dp, bottom = 32.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .padding(horizontal = 22.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(LoginHeroDark),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Favorite,
+                            contentDescription = "Sentinel Health",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                    Text(
+                        text = "Sentinel Health",
+                        color = Color.White,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Monitoreo inteligente de salud",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            Card(
+                shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .padding(top = 0.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 22.dp, vertical = 22.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text(
+                        text = "Bienvenido de nuevo",
+                        color = LoginText,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Ingresa con tus credenciales para continuar",
+                        color = LoginMuted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Spacer(Modifier.height(6.dp))
+
+                    Text("Correo electrónico", color = LoginText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(
                         value = username,
                         onValueChange = { username = it; showError = false },
-                        label = { Text("User") },
+                        placeholder = { Text("doctor@hospital.com") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
                     )
 
+                    Text("Contraseña", color = LoginText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it; showError = false },
-                        label = { Text("Password") },
+                        placeholder = { Text("••••••••") },
                         singleLine = true,
                         visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth()
+                        trailingIcon = {
+                            IconButton(onClick = { showPassword = !showPassword }) {
+                                Icon(
+                                    imageVector = if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                    contentDescription = "Toggle password"
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
                     )
 
                     if (showError) {
                         Text(
                             text = errorMessage.ifBlank { "Invalid user or password" },
                             color = Color(0xFFD35C55),
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
 
+                    TextButton(
+                        onClick = {
+                            context.startActivity(Intent(context, ForgotPasswordActivity::class.java))
+                        },
+                        modifier = Modifier.align(Alignment.End),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("¿Olvidaste tu contraseña?", color = LoginHero, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    }
+
+                    Button(
+                        onClick = {
+                            if (isLoading) return@Button
+                            showError = false
+                            errorMessage = ""
+                            if (username == "user" && password == "user") {
+                                onLoginDestination(LoginDestination.DASHBOARD)
+                                return@Button
+                            }
+                            if (username.isBlank() || password.isBlank()) {
+                                showError = true
+                                errorMessage = "Please fill all fields"
+                                return@Button
+                            }
+                            isLoading = true
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    loginWithApi(username.trim(), password)
+                                }
+                                isLoading = false
+                                if (result.success) {
+                                    withContext(Dispatchers.IO) {
+                                        val profile = fetchCurrentUser()
+                                        if (profile != null) {
+                                            PatientSession.currentUser = profile
+                                            PatientSession.patientId = profile.id
+                                        }
+                                    }
+                                    val role = PatientSession.currentUser?.role
+                                    if (role != null && role.equals("DOCTOR", ignoreCase = true)) {
+                                        onLoginDestination(LoginDestination.DOCTOR)
+                                    } else {
+                                        onLoginDestination(LoginDestination.DASHBOARD)
+                                    }
+                                } else {
+                                    showError = true
+                                    errorMessage = result.message
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = LoginChip),
+                        shape = RoundedCornerShape(18.dp),
+                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (isLoading) "Ingresando..." else "Ingresar", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Button(
-                            onClick = { showPassword = !showPassword },
-                            colors = ButtonDefaults.buttonColors(containerColor = LoginChipAlt),
-                            shape = RoundedCornerShape(16.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = if (showPassword) "Hide" else "Show",
-                                color = LoginText,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-
-                        Button(
-                            onClick = {
-                                if (isLoading) return@Button
-                                showError = false
-                                errorMessage = ""
-                                if (username == "user" && password == "user") {
-                                    onLoginSuccess()
-                                    return@Button
-                                }
-                                if (username.isBlank() || password.isBlank()) {
-                                    showError = true
-                                    errorMessage = "Please fill all fields"
-                                    return@Button
-                                }
-                                isLoading = true
-                                scope.launch {
-                                    val result = withContext(Dispatchers.IO) {
-                                        loginWithApi(username.trim(), password)
-                                    }
-                                    isLoading = false
-                                    if (result.success) {
-                                        withContext(Dispatchers.IO) {
-                                            val profile = fetchCurrentUser()
-                                            if (profile != null) {
-                                                PatientSession.currentUser = profile
-                                                PatientSession.patientId = profile.id
-                                            }
-                                        }
-                                        onLoginSuccess()
-                                    } else {
-                                        showError = true
-                                        errorMessage = result.message
-                                    }
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = LoginChip),
-                            shape = RoundedCornerShape(18.dp),
-                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp)
-                        ) {
-                            Text(if (isLoading) "Checking..." else "Login", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
+                        Box(
+                            modifier = Modifier
+                                .height(1.dp)
+                                .weight(1f)
+                                .background(LoginChipAlt)
+                        )
+                        Text(
+                            text = "¿Eres cuidador?",
+                            color = LoginMuted,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .height(1.dp)
+                                .weight(1f)
+                                .background(LoginChipAlt)
+                        )
                     }
 
-                    TextButton(
-                        onClick = { showChangePassword = true },
-                        modifier = Modifier.align(Alignment.End)
+                    Button(
+                        onClick = {
+                            context.startActivity(Intent(context, CaretakerRegistrationActivity::class.java))
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                        shape = RoundedCornerShape(18.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(18.dp))
                     ) {
-                        Text("Change password", color = LoginText, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Icon(
+                            imageVector = Icons.Outlined.PersonAddAlt1,
+                            contentDescription = "Register caretaker",
+                            tint = LoginHero,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            text = "Registrar como Cuidador",
+                            color = LoginHero,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
                     }
-                    TextButton(
-                        onClick = { showForgotPassword = true },
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        Text("Forgot password?", color = LoginText, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    }
+
+                    Text(
+                        text = "Al registrarte, podrás acceder una vez que un médico o paciente te vincule a su perfil.",
+                        color = LoginMuted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }
     }
 
-    if (showChangePassword) {
-        ChangePasswordDialog(
-            scope = scope,
-            onDismiss = { showChangePassword = false }
-        )
-    }
-
-    if (showForgotPassword) {
-        ForgotPasswordDialog(
-            scope = scope,
-            onDismiss = { showForgotPassword = false }
-        )
-    }
 }
 
-@Composable
-private fun LoginTopBar() {
-    val context = LocalContext.current
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        IconButton(onClick = {}) {
-            Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = LoginNav)
-        }
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(Color.White),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(text = "+", color = LoginText, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-        }
-        IconButton(onClick = {
-            context.startActivity(Intent(context, NotificationsActivity::class.java))
-        }) {
-            Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = LoginNav)
-        }
-    }
+private enum class LoginDestination {
+    DASHBOARD,
+    DOCTOR
 }
 
 private data class LoginResult(val success: Boolean, val message: String)
@@ -348,78 +421,6 @@ private fun readStream(stream: java.io.InputStream?): String {
     return BufferedReader(InputStreamReader(stream)).use { it.readText() }
 }
 
-@Composable
-private fun ChangePasswordDialog(
-    scope: kotlinx.coroutines.CoroutineScope,
-    onDismiss: () -> Unit
-) {
-    var oldPassword by remember { mutableStateOf("") }
-    var newPassword by remember { mutableStateOf("") }
-    var isSubmitting by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf("") }
-    var showMessage by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Change password") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = oldPassword,
-                    onValueChange = { oldPassword = it; showMessage = false },
-                    label = { Text("Old password") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = newPassword,
-                    onValueChange = { newPassword = it; showMessage = false },
-                    label = { Text("New password") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                if (showMessage) {
-                    Text(
-                        text = message,
-                        color = if (message.startsWith("Success")) Color(0xFF2E7D32) else Color(0xFFD35C55),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (isSubmitting) return@Button
-                    if (oldPassword.isBlank() || newPassword.isBlank()) {
-                        message = "Please fill all fields"
-                        showMessage = true
-                        return@Button
-                    }
-                    isSubmitting = true
-                    scope.launch {
-                        val result = withContext(Dispatchers.IO) {
-                            changePassword(oldPassword.trim(), newPassword.trim())
-                        }
-                        isSubmitting = false
-                        message = if (result.success) "Success: password updated" else result.message
-                        showMessage = true
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = LoginChip)
-            ) {
-                Text(if (isSubmitting) "Saving..." else "Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
-}
-
 private fun fetchCurrentUser(): UserProfile? {
     val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/users/me")
     return try {
@@ -451,128 +452,6 @@ private fun fetchCurrentUser(): UserProfile? {
     }
 }
 
-private fun changePassword(oldPassword: String, newPassword: String): LoginResult {
-    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/auth/change-password")
-    val payload = """{"oldPassword":"$oldPassword","newPassword":"$newPassword"}"""
-    return try {
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            setRequestProperty("Content-Type", "application/json")
-            PatientSession.accessToken?.let {
-                setRequestProperty("Authorization", "Bearer $it")
-            }
-            connectTimeout = 10000
-            readTimeout = 10000
-            doOutput = true
-        }
-        conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-        val code = conn.responseCode
-        val body = readStream(if (code in 200..299) conn.inputStream else conn.errorStream)
-        conn.disconnect()
-        when {
-            code in 200..299 -> LoginResult(true, "")
-            code == 400 -> LoginResult(false, body.ifBlank { "Invalid password" })
-            code == 401 || code == 403 -> LoginResult(false, "Unauthorized")
-            else -> LoginResult(false, body.ifBlank { "Change password failed (HTTP $code)" })
-        }
-    } catch (e: Exception) {
-        LoginResult(false, e.message ?: "Network error")
-    }
-}
-
-@Composable
-private fun ForgotPasswordDialog(
-    scope: kotlinx.coroutines.CoroutineScope,
-    onDismiss: () -> Unit
-) {
-    var step by remember { mutableStateOf(1) }
-    var email by remember { mutableStateOf("") }
-    var token by remember { mutableStateOf("") }
-    var newPassword by remember { mutableStateOf("") }
-    var isSubmitting by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf("") }
-    var showMessage by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (step == 1) "Forgot password" else "Reset password") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (step == 1) {
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it; showMessage = false },
-                        label = { Text("Email") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                } else {
-                    OutlinedTextField(
-                        value = token,
-                        onValueChange = { token = it; showMessage = false },
-                        label = { Text("Token") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newPassword,
-                        onValueChange = { newPassword = it; showMessage = false },
-                        label = { Text("New password") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                if (showMessage) {
-                    Text(
-                        text = message,
-                        color = if (message.startsWith("Success")) Color(0xFF2E7D32) else Color(0xFFD35C55),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (isSubmitting) return@Button
-                    isSubmitting = true
-                    scope.launch {
-                        val result = withContext(Dispatchers.IO) {
-                            if (step == 1) {
-                                forgotPassword(email.trim())
-                            } else {
-                                resetPassword(token.trim(), newPassword.trim())
-                            }
-                        }
-                        isSubmitting = false
-                        if (result.success) {
-                            if (step == 1) {
-                                message = "Success: token sent"
-                                showMessage = true
-                                step = 2
-                            } else {
-                                message = "Success: password updated"
-                                showMessage = true
-                                onDismiss()
-                            }
-                        } else {
-                            message = result.message
-                            showMessage = true
-                        }
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = LoginChip)
-            ) {
-                Text(if (isSubmitting) "Saving..." else if (step == 1) "Send" else "Reset")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
-}
 
 private fun forgotPassword(email: String): LoginResult {
     val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/auth/forgot-password")

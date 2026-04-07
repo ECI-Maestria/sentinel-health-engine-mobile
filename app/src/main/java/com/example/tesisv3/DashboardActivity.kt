@@ -40,6 +40,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.runtime.Composable
@@ -55,11 +56,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -104,6 +109,7 @@ private fun DashboardScreen(onBack: () -> Unit) {
     var showTlsDialog by remember { mutableStateOf(false) }
     var mqttDetails by remember { mutableStateOf<String?>(null) }
     var showMqttDialog by remember { mutableStateOf(false) }
+    var showChangePassword by remember { mutableStateOf(false) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -126,6 +132,17 @@ private fun DashboardScreen(onBack: () -> Unit) {
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                     ) {
                         Text("Settings", fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = {
+                            showChangePassword = true
+                            scope.launch { drawerState.close() }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = DashboardChip),
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Text("Change password", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -416,6 +433,10 @@ private fun DashboardScreen(onBack: () -> Unit) {
             }
         )
     }
+
+    if (showChangePassword) {
+        ChangePasswordDialog(onDismiss = { showChangePassword = false })
+    }
 }
 
 @Composable
@@ -610,4 +631,121 @@ private fun runTlsCheck(): String {
         val cause = e.cause?.let { " | Cause: ${it.javaClass.simpleName}: ${it.message}" } ?: ""
         "Failed: ${e.javaClass.simpleName}: ${e.message}$cause"
     }
+}
+
+@Composable
+private fun ChangePasswordDialog(onDismiss: () -> Unit) {
+    var oldPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf("") }
+    var showMessage by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Change password") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = oldPassword,
+                    onValueChange = { oldPassword = it; showMessage = false },
+                    label = { Text("Old password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = newPassword,
+                    onValueChange = { newPassword = it; showMessage = false },
+                    label = { Text("New password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (showMessage) {
+                    Text(
+                        text = message,
+                        color = if (message.startsWith("Success")) Color(0xFF2E7D32) else Color(0xFFD35C55),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (isSubmitting) return@Button
+                    if (oldPassword.isBlank() || newPassword.isBlank()) {
+                        message = "Please fill all fields"
+                        showMessage = true
+                        return@Button
+                    }
+                    isSubmitting = true
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            changePassword(oldPassword.trim(), newPassword.trim())
+                        }
+                        isSubmitting = false
+                        if (result.success) {
+                            message = "Success: password updated"
+                            showMessage = true
+                            onDismiss()
+                        } else {
+                            message = result.message
+                            showMessage = true
+                        }
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = DashboardChip)
+            ) {
+                Text(if (isSubmitting) "Saving..." else "Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+private data class ChangePasswordResult(val success: Boolean, val message: String)
+
+private fun changePassword(oldPassword: String, newPassword: String): ChangePasswordResult {
+    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/auth/change-password")
+    val payload = """{"oldPassword":"${escapeJson(oldPassword)}","newPassword":"${escapeJson(newPassword)}"}"""
+    return try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            setRequestProperty("Content-Type", "application/json")
+            PatientSession.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+            connectTimeout = 10000
+            readTimeout = 10000
+            doOutput = true
+        }
+        conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+        val code = conn.responseCode
+        val body = readStream(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+        when {
+            code in 200..299 -> ChangePasswordResult(true, "")
+            code == 401 || code == 403 -> ChangePasswordResult(false, "Unauthorized")
+            else -> ChangePasswordResult(false, body.ifBlank { "Change failed (HTTP $code)" })
+        }
+    } catch (e: Exception) {
+        ChangePasswordResult(false, e.message ?: "Network error")
+    }
+}
+
+private fun readStream(stream: java.io.InputStream?): String {
+    if (stream == null) return ""
+    return BufferedReader(InputStreamReader(stream)).use { it.readText() }
+}
+
+private fun escapeJson(value: String): String {
+    return value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
 }
