@@ -70,6 +70,15 @@
                         android:layout_height="wrap_content"
                         android:text="SpO2 %"
                         android:textSize="8sp" />
+
+                    <ProgressBar
+                        android:id="@+id/spo2ProgressBar"
+                        style="?android:attr/progressBarStyleSmall"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:indeterminate="true"
+                        android:visibility="gone" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -127,6 +136,15 @@
                     android:layout_height="wrap_content"
                     android:text="ECG" />
             </LinearLayout>
+
+            <Button
+                android:id="@+id/startAllSensorsButton"
+                style="?android:attr/buttonStyleSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:layout_marginTop="6dp"
+                android:text="@string/start_all_sensors" />
 
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/textInputLayout"

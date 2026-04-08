@@ -84,8 +84,6 @@ public class HeartRateListener extends BaseListener {
         }
         TrackerDataNotifier.getInstance().notifyHeartRateTrackerObservers(hrData);
         Log.d(APP_TAG, dataPoint.toString());
-        String json = buildJson(hrData);
-        sendData(context, json);
 
     }
 
