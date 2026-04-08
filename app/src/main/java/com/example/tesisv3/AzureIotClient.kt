@@ -52,6 +52,8 @@ object AzureIotClient {
             connection.requestMethod = "POST"
             connection.setRequestProperty("Authorization", sasToken)
             connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("iothub-contenttype", "application/json")
+            connection.setRequestProperty("iothub-contentencoding", "utf-8")
             connection.doOutput = true
 
             connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }

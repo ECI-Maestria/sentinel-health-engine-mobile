@@ -29,7 +29,9 @@ object MqttTransport : IotTransport {
             val message = MqttMessage(payload.toByteArray(Charsets.UTF_8)).apply {
                 qos = 1
             }
-            client.publish("devices/${config.deviceId}/messages/events/", message)
+            val topic =
+                "devices/${config.deviceId}/messages/events/$.ct=application%2Fjson&$.ce=utf-8"
+            client.publish(topic, message)
             client.disconnect()
             client.close()
             AzureIotClient.SyncResult(success = true, code = 200, body = "MQTT publish ok")

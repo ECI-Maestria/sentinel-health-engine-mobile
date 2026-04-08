@@ -45,6 +45,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +63,12 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.google.android.gms.tasks.Tasks
+import com.google.android.gms.wearable.Wearable
+import com.google.android.gms.wearable.MessageClient
+import com.google.android.gms.wearable.MessageEvent
+import java.nio.charset.StandardCharsets
+import androidx.lifecycle.lifecycleScope
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
@@ -69,8 +76,9 @@ import java.net.URL
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import javax.net.ssl.HttpsURLConnection
+import org.json.JSONObject
 
-class DashboardActivity : ComponentActivity() {
+class DashboardActivity : ComponentActivity(), MessageClient.OnMessageReceivedListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
             enableEdgeToEdge()
@@ -82,6 +90,59 @@ class DashboardActivity : ComponentActivity() {
                 DashboardScreen(onBack = { finish() })
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Wearable.getMessageClient(this).addListener(this)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Wearable.getMessageClient(this).removeListener(this)
+    }
+
+    override fun onMessageReceived(messageEvent: MessageEvent) {
+        val payload = String(messageEvent.data, StandardCharsets.UTF_8)
+        val path = messageEvent.path ?: ""
+        lifecycleScope.launch(Dispatchers.IO) {
+            val transport: IotTransport = when (IotSettings.getTransport(this@DashboardActivity)) {
+                TransportType.HTTP -> HttpTransport
+                TransportType.MQTT, TransportType.MQTT_WS -> MqttTransport
+            }
+            val deviceUuid = DeviceRegistrationManager.getDeviceUuid(this@DashboardActivity)
+            val body = buildWearablePayload(payload, path, deviceUuid)
+            transport.sendSyncMessage(BuildConfig.AZURE_IOT_CONNECTION_STRING, body)
+        }
+    }
+}
+
+private fun buildWearablePayload(rawPayload: String, path: String, deviceUuid: String): String {
+    val now = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString()
+    val parsed = try {
+        JSONObject(rawPayload)
+    } catch (_: Exception) {
+        null
+    }
+    if (parsed != null) {
+        parsed.put("deviceId", deviceUuid)
+        if (!parsed.has("timestamp")) {
+            parsed.put("timestamp", now)
+        }
+        return parsed.toString()
+    }
+    val heartRate = parsed?.optInt("heartRate", parsed?.optInt("hr", 0) ?: 0) ?: 0
+    val spo2 = parsed?.optInt("spO2", parsed?.optInt("spo2", 0) ?: 0) ?: 0
+    return buildString {
+        append("""{ "deviceId": """").append("\"").append(escapeJson(deviceUuid)).append("\", ")
+        append(""""heartRate": """).append(heartRate).append(", ")
+        append(""""spO2": """).append(spo2).append(", ")
+        append(""""timestamp": """").append("\"").append(now).append("\"")
+        if (parsed == null) {
+            append(", \"rawPath\": \"").append(escapeJson(path)).append("\"")
+            append(", \"rawPayload\": \"").append(escapeJson(rawPayload)).append("\"")
+        }
+        append(" }")
     }
 }
 
@@ -110,6 +171,30 @@ private fun DashboardScreen(onBack: () -> Unit) {
     var mqttDetails by remember { mutableStateOf<String?>(null) }
     var showMqttDialog by remember { mutableStateOf(false) }
     var showChangePassword by remember { mutableStateOf(false) }
+    var wearableConnected by remember { mutableStateOf<Boolean?>(null) }
+    var registerDetails by remember { mutableStateOf<String?>(null) }
+    var showRegisterDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        wearableConnected = withContext(Dispatchers.IO) {
+            isWearableConnected(context)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val result = withContext(Dispatchers.IO) {
+            DeviceRegistrationManager.consumeLastResult(context)
+        }
+        if (result != null) {
+            registerDetails = buildString {
+                append("Success: ${result.success}\n")
+                append("HTTP: ${result.code ?: "N/A"}\n")
+                append("Body: ${result.body ?: "N/A"}\n")
+                append("Error: ${result.error ?: "N/A"}")
+            }
+            showRegisterDialog = true
+        }
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -173,7 +258,10 @@ private fun DashboardScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
                 item {
-                    DashboardTopBar(onMenu = { scope.launch { drawerState.open() } })
+                    DashboardTopBar(
+                        onMenu = { scope.launch { drawerState.open() } },
+                        wearableConnected = wearableConnected
+                    )
                 }
 
                 item {
@@ -434,13 +522,24 @@ private fun DashboardScreen(onBack: () -> Unit) {
         )
     }
 
+    if (showRegisterDialog && registerDetails != null) {
+        AlertDialog(
+            onDismissRequest = { showRegisterDialog = false },
+            title = { Text("Device registration") },
+            text = { Text(registerDetails ?: "") },
+            confirmButton = {
+                Button(onClick = { showRegisterDialog = false }) { Text("OK") }
+            }
+        )
+    }
+
     if (showChangePassword) {
         ChangePasswordDialog(onDismiss = { showChangePassword = false })
     }
 }
 
 @Composable
-private fun DashboardTopBar(onMenu: () -> Unit) {
+private fun DashboardTopBar(onMenu: () -> Unit, wearableConnected: Boolean?) {
     val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -464,8 +563,31 @@ private fun DashboardTopBar(onMenu: () -> Unit) {
         IconButton(onClick = {
             context.startActivity(Intent(context, NotificationsActivity::class.java))
         }) {
-            Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = DashboardNav)
+            Box {
+                Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = DashboardNav)
+                val dotColor = when (wearableConnected) {
+                    true -> Color(0xFF4CAF50)
+                    false -> Color(0xFFD64545)
+                    null -> Color(0xFFB0B8B2)
+                }
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(dotColor)
+                        .align(Alignment.TopEnd)
+                )
+            }
         }
+    }
+}
+
+private fun isWearableConnected(context: android.content.Context): Boolean {
+    return try {
+        val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
+        nodes.isNotEmpty()
+    } catch (_: Exception) {
+        false
     }
 }
 
