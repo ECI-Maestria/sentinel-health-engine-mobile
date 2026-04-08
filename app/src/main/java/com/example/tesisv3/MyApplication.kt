@@ -14,7 +14,7 @@ import java.security.Security
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
-class MyApplication : Application() {
+class  MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 

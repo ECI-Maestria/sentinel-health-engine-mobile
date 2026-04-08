@@ -81,6 +81,36 @@
             tools:targetApi="n" />
 
         <activity
+            android:name=".DoctorPatientProfileActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            tools:targetApi="n" />
+
+        <activity
+            android:name=".VerifyResetCodeActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            tools:targetApi="n" />
+
+        <activity
+            android:name=".ResetPasswordActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            tools:targetApi="n" />
+
+        <activity
+            android:name=".PatientRegistrationActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            tools:targetApi="n" />
+
+        <activity
+            android:name=".DoctorRegistrationActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            tools:targetApi="n" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="false"
             android:resizeableActivity="true"

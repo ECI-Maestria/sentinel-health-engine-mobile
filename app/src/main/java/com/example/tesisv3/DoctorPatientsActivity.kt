@@ -15,15 +15,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.PersonAddAlt1
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -38,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -66,9 +73,10 @@ class DoctorPatientsActivity : ComponentActivity() {
         }
 
         super.onCreate(savedInstanceState)
+        val refreshOnStart = intent?.getBooleanExtra("refresh_patients", false) ?: false
         setContent {
             MaterialTheme {
-                DoctorPatientsScreen()
+                DoctorPatientsScreen(refreshOnStart = refreshOnStart)
             }
         }
     }
@@ -80,16 +88,22 @@ private val PatientsChip = Color(0xFF5BCB90)
 private val PatientsText = Color(0xFF2E3F35)
 private val PatientsMuted = Color(0xFF7B8C81)
 private val PatientsNav = Color(0xFF58725E)
+private val PatientsHeader = Color(0xFF3FA974)
+private val PatientsAccentSoft = Color(0xFFE6F3EC)
+private val PatientsWarningSoft = Color(0xFFFFF1E2)
+private val PatientsDangerSoft = Color(0xFFFFECEC)
+private val PatientsDanger = Color(0xFFD64545)
+private val PatientsWarning = Color(0xFFF39C2D)
 
 @Composable
-private fun DoctorPatientsScreen() {
+private fun DoctorPatientsScreen(refreshOnStart: Boolean) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var patients by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var showCreatePatient by remember { mutableStateOf(false) }
-    var showCreateCaretaker by remember { mutableStateOf(false) }
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var hasRefreshed by remember { mutableStateOf(false) }
 
     fun loadPatients() {
         if (isLoading) return
@@ -106,11 +120,22 @@ private fun DoctorPatientsScreen() {
         }
     }
 
-    if (patients.isEmpty() && errorMessage == null && !isLoading) {
+    if ((patients.isEmpty() || (refreshOnStart && !hasRefreshed)) && errorMessage == null && !isLoading) {
+        if (refreshOnStart) {
+            hasRefreshed = true
+        }
         loadPatients()
     }
 
-    Scaffold(containerColor = PatientsBackground) { innerPadding ->
+    Scaffold(
+        containerColor = PatientsBackground,
+        bottomBar = {
+            DoctorBottomNav(
+                selected = selectedTab,
+                onSelect = { selectedTab = it }
+            )
+        }
+    ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -124,181 +149,452 @@ private fun DoctorPatientsScreen() {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                PatientsTopBar(onNotifications = {
+                DoctorTopBar(onNotifications = {
                     context.startActivity(android.content.Intent(context, NotificationsActivity::class.java))
                 })
             }
 
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text("Patients", color = PatientsText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            text = "Assigned patients list",
-                            color = PatientsMuted,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = { showCreatePatient = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = PatientsChip),
-                            shape = RoundedCornerShape(16.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Text("New patient", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                DoctorSummaryCard(
+                    doctorName = PatientSession.currentUser?.fullName ?: "Dr. Ana Martínez",
+                    patientCount = patients.size,
+                    alertsToday = 3,
+                    appointmentsToday = 2
+                )
+            }
+
+            item {
+                SectionHeader(title = "Acciones Rápidas")
+            }
+
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    QuickActionCard(
+                        title = "Nuevo Paciente",
+                        icon = Icons.Outlined.PersonAddAlt1,
+                        tint = PatientsHeader,
+                        background = PatientsAccentSoft,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            context.startActivity(
+                                android.content.Intent(context, PatientRegistrationActivity::class.java)
+                            )
                         }
-                        Button(
-                            onClick = { showCreateCaretaker = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = PatientsChip),
-                            shape = RoundedCornerShape(16.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Text("New caretaker", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
-                    }
+                    )
+                    QuickActionCard(
+                        title = "Agendar Cita",
+                        icon = Icons.Outlined.CalendarToday,
+                        tint = Color(0xFF2E7BD8),
+                        background = Color(0xFFE8F1FF),
+                        modifier = Modifier.weight(1f),
+                        onClick = { }
+                    )
                 }
             }
 
             item {
-                Button(
-                    onClick = { loadPatients() },
-                    colors = ButtonDefaults.buttonColors(containerColor = PatientsChip),
-                    shape = RoundedCornerShape(16.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                ) {
-                    Text(if (isLoading) "Loading..." else "Refresh", fontWeight = FontWeight.Bold)
-                }
-            }
-
-            if (errorMessage != null) {
-                item {
-                    Text(
-                        text = errorMessage ?: "Error loading patients",
-                        color = Color(0xFFD35C55),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    QuickActionCard(
+                        title = "Generar Reporte",
+                        icon = Icons.Outlined.Description,
+                        tint = Color(0xFFD39C39),
+                        background = Color(0xFFFFF4D9),
+                        modifier = Modifier.weight(1f),
+                        onClick = { }
+                    )
+                    QuickActionCard(
+                        title = "Nuevo Doctor",
+                        icon = Icons.Outlined.Person,
+                        tint = Color(0xFF7B5CE7),
+                        background = Color(0xFFF0E9FF),
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            context.startActivity(
+                                android.content.Intent(context, DoctorRegistrationActivity::class.java)
+                            )
+                        }
                     )
                 }
             }
 
-            items(patients) { patient ->
-                PatientCard(patient = patient)
+            item {
+                SectionHeader(title = "Alertas Activas", actionLabel = "Ver todas")
+            }
+
+            item {
+                AlertCard(
+                    title = "María García — Presión Alta",
+                    subtitle = "160/95 mmHg detectado por dispositivo IoT",
+                    time = "hace 5 minutos",
+                    accent = PatientsDanger,
+                    background = PatientsDangerSoft
+                )
+            }
+
+            item {
+                AlertCard(
+                    title = "Carlos López — SpO2 Bajo",
+                    subtitle = "94% de saturación de oxígeno",
+                    time = "hace 20 minutos",
+                    accent = PatientsWarning,
+                    background = PatientsWarningSoft
+                )
+            }
+
+            item {
+                SectionHeader(title = "Mis Pacientes", actionLabel = "Ver todos")
+            }
+
+            items(mockDoctorPatients()) { patient ->
+                DoctorPatientCard(patient = patient)
             }
         }
     }
 
-    if (showCreatePatient) {
-        CreateUserDialog(
-            title = "Create patient",
-            onDismiss = { showCreatePatient = false },
-            onSubmit = { first, last, email ->
-                val result = withContext(Dispatchers.IO) {
-                    createUser(
-                        endpoint = "https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients",
-                        firstName = first,
-                        lastName = last,
-                        email = email
-                    )
-                }
-                if (result.success) {
-                    loadPatients()
-                }
-                result
-            }
-        )
-    }
-
-    if (showCreateCaretaker) {
-        CreateUserDialog(
-            title = "Create caretaker",
-            onDismiss = { showCreateCaretaker = false },
-            onSubmit = { first, last, email ->
-                withContext(Dispatchers.IO) {
-                    createUser(
-                        endpoint = "https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/caretakers",
-                        firstName = first,
-                        lastName = last,
-                        email = email
-                    )
-                }
-            }
-        )
-    }
 }
 
 @Composable
-private fun PatientsTopBar(onNotifications: () -> Unit) {
+private fun DoctorTopBar(onNotifications: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        IconButton(onClick = {}) {
+        IconButton(
+            onClick = {},
+            modifier = Modifier
+                .size(42.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color.White)
+        ) {
             Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = PatientsNav)
         }
-        Box(
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("SENTINEL HEALTH", color = PatientsMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text("Panel del Doctor", color = PatientsText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
+        IconButton(
+            onClick = onNotifications,
             modifier = Modifier
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(Color.White),
-            contentAlignment = Alignment.Center
+                .size(42.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color.White)
         ) {
-            Text(text = "Dr", color = PatientsText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        }
-        IconButton(onClick = onNotifications) {
-            Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = PatientsNav)
-        }
-    }
-}
-
-@Composable
-private fun PatientCard(patient: UserProfile) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = PatientsCard),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(
-                text = patient.fullName ?: "${patient.firstName ?: ""} ${patient.lastName ?: ""}".trim(),
-                color = PatientsText,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(text = patient.email, color = PatientsMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatusChip(label = if (patient.isActive) "Active" else "Inactive")
-                StatusChip(label = patient.role.ifBlank { "PATIENT" })
+            Box {
+                Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = PatientsNav)
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE84747))
+                        .align(Alignment.TopEnd)
+                )
             }
         }
     }
 }
 
 @Composable
-private fun StatusChip(label: String) {
+private fun DoctorSummaryCard(
+    doctorName: String,
+    patientCount: Int,
+    alertsToday: Int,
+    appointmentsToday: Int
+) {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = PatientsHeader),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Buenos días 👋", color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(doctorName, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                SummaryMetric(value = patientCount.toString(), label = "Pacientes")
+                DividerLine()
+                SummaryMetric(value = alertsToday.toString(), label = "Alertas hoy")
+                DividerLine()
+                SummaryMetric(value = appointmentsToday.toString(), label = "Citas hoy")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryMetric(value: String, label: String) {
+    Column(horizontalAlignment = Alignment.Start) {
+        Text(value, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun DividerLine() {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(PatientsChip.copy(alpha = 0.18f))
-            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .width(1.dp)
+            .height(32.dp)
+            .background(Color.White.copy(alpha = 0.4f))
+    )
+}
+
+@Composable
+private fun SectionHeader(title: String, actionLabel: String? = null) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(text = label, color = PatientsText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Text(title, color = PatientsText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        if (actionLabel != null) {
+            Text(actionLabel, color = PatientsHeader, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun QuickActionCard(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    background: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = modifier
+    ) {
+        Button(
+            onClick = onClick,
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+            contentPadding = PaddingValues(16.dp),
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                horizontalAlignment = Alignment.Start,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(background),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(icon, contentDescription = title, tint = tint)
+                }
+                Text(title, color = PatientsText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlertCard(
+    title: String,
+    subtitle: String,
+    time: String,
+    accent: Color,
+    background: Color
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = background),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(accent)
+                )
+                Text(title, color = accent, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
+            Text(subtitle, color = accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(time, color = accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun DoctorPatientCard(patient: DoctorPatientUi) {
+    val context = LocalContext.current
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color.White)
+    ) {
+        Button(
+            onClick = {
+                val intent = android.content.Intent(context, DoctorPatientProfileActivity::class.java).apply {
+                    putExtra("patient_name", patient.name)
+                    putExtra("patient_email", patient.email)
+                    putExtra("patient_initials", patient.initials)
+                    putExtra("patient_status", patient.status)
+                }
+                context.startActivity(intent)
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+            contentPadding = PaddingValues(0.dp),
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(patient.avatarColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(patient.initials, color = patient.initialsColor, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(patient.name, color = PatientsText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text(patient.detail, color = PatientsMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(patient.statusBackground)
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Text(patient.status, color = patient.statusColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DoctorBottomNav(
+    selected: Int,
+    onSelect: (Int) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White)
+            .navigationBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        DoctorNavItem("Inicio", Icons.Outlined.CalendarToday, selected == 0) { onSelect(0) }
+        DoctorNavItem("Pacientes", Icons.Outlined.Person, selected == 1) { onSelect(1) }
+        DoctorNavItem("Calendario", Icons.Outlined.CalendarToday, selected == 2) { onSelect(2) }
+        DoctorNavItem("Reportes", Icons.Outlined.Description, selected == 3) { onSelect(3) }
+    }
+}
+
+@Composable
+private fun DoctorNavItem(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(if (selected) PatientsHeader else Color.Transparent)
+        ) {
+            IconButton(onClick = onClick, modifier = Modifier.fillMaxSize()) {
+                Icon(icon, contentDescription = label, tint = if (selected) Color.White else PatientsMuted)
+            }
+        }
+        Text(label, color = if (selected) PatientsHeader else PatientsMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
 private data class PatientsResult(val patients: List<UserProfile>, val error: String?)
 
 private data class CreateResult(val success: Boolean, val message: String)
+
+private data class DoctorPatientUi(
+    val name: String,
+    val email: String,
+    val detail: String,
+    val initials: String,
+    val avatarColor: Color,
+    val initialsColor: Color,
+    val status: String,
+    val statusColor: Color,
+    val statusBackground: Color
+)
+
+private fun mockDoctorPatients(): List<DoctorPatientUi> {
+    return listOf(
+        DoctorPatientUi(
+            name = "María García",
+            email = "maria.garcia@email.com",
+            detail = "2 dispositivos · 1 cuidador",
+            initials = "MG",
+            avatarColor = Color(0xFFD8F0E2),
+            initialsColor = Color(0xFF2F8A5B),
+            status = "Alerta",
+            statusColor = PatientsDanger,
+            statusBackground = Color(0xFFFFE7E7)
+        ),
+        DoctorPatientUi(
+            name = "Carlos López",
+            email = "carlos.lopez@email.com",
+            detail = "1 dispositivo · 2 cuidadores",
+            initials = "CL",
+            avatarColor = Color(0xFFD6E9FF),
+            initialsColor = Color(0xFF2464C3),
+            status = "Revisión",
+            statusColor = PatientsWarning,
+            statusBackground = Color(0xFFFFF1D6)
+        ),
+        DoctorPatientUi(
+            name = "Juan Pérez",
+            email = "juan.perez@email.com",
+            detail = "1 dispositivo · 0 cuidadores",
+            initials = "JP",
+            avatarColor = Color(0xFFFFF1DA),
+            initialsColor = Color(0xFFC07000),
+            status = "Normal",
+            statusColor = PatientsHeader,
+            statusBackground = Color(0xFFE5F4EA)
+        )
+    )
+}
 
 @Composable
 private fun CreateUserDialog(

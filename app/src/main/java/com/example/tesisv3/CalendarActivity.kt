@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -49,6 +50,7 @@ import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +64,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import androidx.compose.ui.window.Dialog
 import com.example.tesisv3.data.AppDatabase
 import com.example.tesisv3.data.AppointmentEntity
@@ -80,6 +83,7 @@ import java.util.UUID
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import org.json.JSONObject
 
 class CalendarActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -104,6 +108,8 @@ private val CalendarChip = Color(0xFF5BCB90)
 private val CalendarChipAlt = Color(0xFFE1F2E6)
 private val CalendarAccent = Color(0xFF4FA6A5)
 private val CalendarNav = Color(0xFF5A7A63)
+private val CalendarSurface = Color(0xFFF2F6F3)
+private val CalendarBorder = Color(0xFFE4EAE6)
 
 @Composable
 private fun CalendarScreen(onBack: () -> Unit) {
@@ -112,11 +118,19 @@ private fun CalendarScreen(onBack: () -> Unit) {
     val dao = remember { AppDatabase.getInstance(context).appointmentDao() }
     val scope = rememberCoroutineScope()
     val appointments by dao.observeAll().collectAsState(initial = emptyList())
+    var apiAppointments by remember { mutableStateOf<List<ApiAppointment>>(emptyList()) }
     var selectedDateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var displayedMonthMillis by remember { mutableStateOf(startOfMonth(System.currentTimeMillis())) }
     var showAddDialog by remember { mutableStateOf(false) }
     var editingAppointment by remember { mutableStateOf<AppointmentEntity?>(null) }
     var deletingAppointment by remember { mutableStateOf<AppointmentEntity?>(null) }
+    var selectedFilter by remember { mutableStateOf(CalendarFilter.DAY) }
+    var feedbackMessage by remember { mutableStateOf<String?>(null) }
+    var feedbackSuccess by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        apiAppointments = withContext(Dispatchers.IO) { fetchAppointments(PatientSession.patientId) }
+    }
 
     Scaffold(
         containerColor = CalendarBackground,
@@ -148,31 +162,37 @@ private fun CalendarScreen(onBack: () -> Unit) {
                 CalendarCard(
                     selectedDateMillis = selectedDateMillis,
                     displayedMonthMillis = displayedMonthMillis,
-                    appointments = appointments,
+                    appointments = apiAppointments,
                     onDateSelected = { selectedDateMillis = it },
                     onMonthChange = { displayedMonthMillis = it },
                     onAddAppointment = { showAddDialog = true }
                 )
             }
 
-            val selectedMonth = Calendar.getInstance().apply { timeInMillis = displayedMonthMillis }
-            val month = selectedMonth.get(Calendar.MONTH)
-            val year = selectedMonth.get(Calendar.YEAR)
-            val monthlyAppointments = appointments.filter {
-                val cal = Calendar.getInstance().apply { timeInMillis = it.startAt }
-                cal.get(Calendar.MONTH) == month && cal.get(Calendar.YEAR) == year
+            item {
+                FilterRow(
+                    selected = selectedFilter,
+                    onSelected = { selectedFilter = it }
+                )
             }
+
+            val filteredAppointments = filterAppointments(
+                appointments = apiAppointments,
+                selectedDateMillis = selectedDateMillis,
+                displayedMonthMillis = displayedMonthMillis,
+                filter = selectedFilter
+            )
 
             item {
                 Text(
-                    text = "Appointments",
+                    text = "Citas",
                     color = CalendarText,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
 
-            if (monthlyAppointments.isEmpty()) {
+            if (filteredAppointments.isEmpty()) {
                 item {
                     Surface(
                         shape = RoundedCornerShape(18.dp),
@@ -184,21 +204,22 @@ private fun CalendarScreen(onBack: () -> Unit) {
                                 .padding(16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("No appointments this month", color = CalendarMuted)
+                            Text("No hay citas en este periodo", color = CalendarMuted)
                         }
                     }
                 }
             } else {
-                items(monthlyAppointments.size) { index ->
-                    val item = monthlyAppointments[index]
+                items(filteredAppointments.size) { index ->
+                    val item = filteredAppointments[index]
                     AppointmentCard(
                         title = item.title,
-                        detail = formatDateTime(item.startAt),
-                        onClick = { editingAppointment = item },
-                        onDelete = { deletingAppointment = item }
+                        detail = formatDateTime(item.scheduledAtMillis),
+                        onClick = { editingAppointment = item.toEntity() },
+                        onDelete = { deletingAppointment = item.toEntity() }
                     )
                 }
             }
+
         }
     }
 
@@ -211,7 +232,7 @@ private fun CalendarScreen(onBack: () -> Unit) {
                 showAddDialog = false
                 editingAppointment = null
             },
-            onSave = { title, hour, minute ->
+            onSave = { title, location, notes, hour, minute ->
                 val baseMillis = editing?.startAt ?: selectedDateMillis
                 val cal = Calendar.getInstance().apply {
                     timeInMillis = baseMillis
@@ -231,15 +252,23 @@ private fun CalendarScreen(onBack: () -> Unit) {
                     } else {
                         dao.update(entity)
                     }
-                    val reminderAt = toUtcIsoString(cal.timeInMillis)
-                    withContext(Dispatchers.IO) {
-                        sendReminderRequest(
+                    val scheduledAt = toUtcIsoString(cal.timeInMillis)
+                    val result = withContext(Dispatchers.IO) {
+                        sendAppointmentRequest(
                             patientId = PatientSession.patientId,
                             title = title,
-                            message = "Reminder: $title",
-                            reminderAt = reminderAt,
-                            recurrence = "DAILY"
+                            scheduledAt = scheduledAt,
+                            location = location,
+                            notes = notes
                         )
+                    }
+                    if (result.success) {
+                        apiAppointments = withContext(Dispatchers.IO) { fetchAppointments(PatientSession.patientId) }
+                        feedbackMessage = "Cita creada correctamente"
+                        feedbackSuccess = true
+                    } else {
+                        feedbackMessage = result.message
+                        feedbackSuccess = false
                     }
                 }
                 showAddDialog = false
@@ -266,6 +295,13 @@ private fun CalendarScreen(onBack: () -> Unit) {
                 TextButton(onClick = { deletingAppointment = null }) { Text("Cancel") }
             }
         )
+    }
+
+    feedbackMessage?.let { message ->
+        Toast
+            .makeText(context, message, if (feedbackSuccess) Toast.LENGTH_SHORT else Toast.LENGTH_LONG)
+            .show()
+        feedbackMessage = null
     }
 }
 
@@ -301,7 +337,7 @@ private fun CalendarTopBar(onBack: () -> Unit) {
 private fun CalendarCard(
     selectedDateMillis: Long,
     displayedMonthMillis: Long,
-    appointments: List<AppointmentEntity>,
+    appointments: List<ApiAppointment>,
     onDateSelected: (Long) -> Unit,
     onMonthChange: (Long) -> Unit,
     onAddAppointment: () -> Unit
@@ -311,10 +347,10 @@ private fun CalendarCard(
     val displayMonth = displayCal.get(Calendar.MONTH)
     val days = remember(displayedMonthMillis) { buildMonthGrid(displayYear, displayMonth) }
     val appointmentsInMonth = appointments.filter {
-        val cal = Calendar.getInstance().apply { timeInMillis = it.startAt }
+        val cal = Calendar.getInstance().apply { timeInMillis = it.scheduledAtMillis }
         cal.get(Calendar.YEAR) == displayYear && cal.get(Calendar.MONTH) == displayMonth
     }.mapNotNull {
-        Calendar.getInstance().apply { timeInMillis = it.startAt }.get(Calendar.DAY_OF_MONTH)
+        Calendar.getInstance().apply { timeInMillis = it.scheduledAtMillis }.get(Calendar.DAY_OF_MONTH)
     }.toSet()
 
     Surface(
@@ -332,7 +368,7 @@ private fun CalendarCard(
                 Text(
                     text = monthYearLabel(displayedMonthMillis),
                     color = CalendarText,
-                    fontSize = 18.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
 
@@ -342,28 +378,39 @@ private fun CalendarCard(
                             val cal = Calendar.getInstance().apply { timeInMillis = displayedMonthMillis }
                             cal.add(Calendar.MONTH, -1)
                             onMonthChange(startOfMonth(cal.timeInMillis))
-                        }
+                        },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(CalendarSurface)
                     ) {
                         Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "Prev", tint = CalendarMuted)
                     }
+                    Spacer(Modifier.width(6.dp))
                     IconButton(
                         onClick = {
                             val cal = Calendar.getInstance().apply { timeInMillis = displayedMonthMillis }
                             cal.add(Calendar.MONTH, 1)
                             onMonthChange(startOfMonth(cal.timeInMillis))
-                        }
+                        },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(CalendarSurface)
                     ) {
                         Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "Next", tint = CalendarMuted)
                     }
                 }
 
-                Button(
-                    onClick = onAddAppointment,
-                    colors = ButtonDefaults.buttonColors(containerColor = CalendarChip),
-                    shape = RoundedCornerShape(18.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                ) {
-                    Text("Add\nAppointment", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                if (PatientSession.currentUser?.role?.equals("DOCTOR", ignoreCase = true) == true) {
+                    Button(
+                        onClick = onAddAppointment,
+                        colors = ButtonDefaults.buttonColors(containerColor = CalendarChip),
+                        shape = RoundedCornerShape(18.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Text("Add Appointment", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
 
@@ -435,9 +482,10 @@ private fun AppointmentCard(
 ) {
     Surface(
         shape = RoundedCornerShape(18.dp),
-        color = CalendarChipAlt,
+        color = Color.White,
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp
+        shadowElevation = 0.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, CalendarBorder)
     ) {
         Row(
             modifier = Modifier
@@ -448,9 +496,9 @@ private fun AppointmentCard(
         ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(Color.White),
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(CalendarChipAlt),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Outlined.EventNote, contentDescription = null, tint = CalendarNav)
@@ -464,7 +512,7 @@ private fun AppointmentCard(
             Spacer(Modifier.weight(1f))
             Card(
                 shape = CircleShape,
-                colors = CardDefaults.cardColors(containerColor = CalendarChipAlt),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFE8E8)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 IconButton(onClick = onDelete) {
@@ -475,15 +523,70 @@ private fun AppointmentCard(
     }
 }
 
+private enum class CalendarFilter { DAY, WEEK, MONTH, YEAR }
+
+@Composable
+private fun FilterRow(
+    selected: CalendarFilter,
+    onSelected: (CalendarFilter) -> Unit
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        FilterChip(label = "Día", active = selected == CalendarFilter.DAY) { onSelected(CalendarFilter.DAY) }
+        FilterChip(label = "Semana", active = selected == CalendarFilter.WEEK) { onSelected(CalendarFilter.WEEK) }
+        FilterChip(label = "Mes", active = selected == CalendarFilter.MONTH) { onSelected(CalendarFilter.MONTH) }
+        FilterChip(label = "Año", active = selected == CalendarFilter.YEAR) { onSelected(CalendarFilter.YEAR) }
+    }
+}
+
+@Composable
+private fun FilterChip(label: String, active: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(containerColor = if (active) CalendarChip else Color.White),
+        border = if (active) null else androidx.compose.foundation.BorderStroke(1.dp, CalendarBorder),
+        shape = RoundedCornerShape(18.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+    ) {
+        Text(
+            text = label,
+            color = if (active) Color.White else CalendarText,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp
+        )
+    }
+}
+
+@Composable
+private fun ReminderCard(title: String, detail: String) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = Color.White,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(title, color = CalendarText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(detail, color = CalendarMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddAppointmentDialog(
     selectedDateMillis: Long,
     existing: AppointmentEntity?,
     onDismiss: () -> Unit,
-    onSave: (String, Int, Int) -> Unit
+    onSave: (String, String, String, Int, Int) -> Unit
 ) {
     var title by remember(existing?.id) { mutableStateOf(existing?.title ?: "") }
+    var location by remember(existing?.id) { mutableStateOf("") }
+    var notes by remember(existing?.id) { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
 
@@ -517,6 +620,22 @@ private fun AddAppointmentDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                OutlinedTextField(
+                    value = location,
+                    onValueChange = { location = it; error = false },
+                    label = { Text("Location") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it; error = false },
+                    label = { Text("Notes") },
+                    singleLine = false,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(
                         onClick = { showTimePicker = true },
@@ -547,7 +666,13 @@ private fun AddAppointmentDialog(
                                 error = true
                                 return@Button
                             }
-                            onSave(title.trim(), timePickerState.hour, timePickerState.minute)
+                            onSave(
+                                title.trim(),
+                                location.trim(),
+                                notes.trim(),
+                                timePickerState.hour,
+                                timePickerState.minute
+                            )
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = CalendarChip)
                     ) {
@@ -613,20 +738,116 @@ private fun toUtcIsoString(timestamp: Long): String {
     return DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(timestamp).atZone(ZoneOffset.UTC))
 }
 
-private fun sendReminderRequest(
+private data class ApiAppointment(
+    val id: String,
+    val title: String,
+    val scheduledAtMillis: Long,
+    val location: String,
+    val notes: String
+) {
+    fun toEntity(): AppointmentEntity {
+        return AppointmentEntity(
+            id = id.ifBlank { UUID.randomUUID().toString() },
+            title = title,
+            startAt = scheduledAtMillis
+        )
+    }
+}
+
+private fun fetchAppointments(patientId: String): List<ApiAppointment> {
+    if (patientId.isBlank()) return emptyList()
+    val url = URL("https://calendar-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients/$patientId/appointments")
+    return try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("Content-Type", "application/json")
+            PatientSession.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+            connectTimeout = 10000
+            readTimeout = 10000
+        }
+        val code = conn.responseCode
+        val body = readStreamString(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+        if (code !in 200..299 || body.isBlank()) return emptyList()
+        val json = JSONObject(body)
+        val arr = json.optJSONArray("appointments") ?: return emptyList()
+        val list = mutableListOf<ApiAppointment>()
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val scheduledAt = item.optString("scheduledAt")
+            list.add(
+                ApiAppointment(
+                    id = item.optString("id"),
+                    title = item.optString("title"),
+                    scheduledAtMillis = parseUtcMillis(scheduledAt),
+                    location = item.optString("location"),
+                    notes = item.optString("notes")
+                )
+            )
+        }
+        list
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+private fun parseUtcMillis(value: String): Long {
+    return try {
+        Instant.parse(value).toEpochMilli()
+    } catch (_: Exception) {
+        System.currentTimeMillis()
+    }
+}
+
+private fun filterAppointments(
+    appointments: List<ApiAppointment>,
+    selectedDateMillis: Long,
+    displayedMonthMillis: Long,
+    filter: CalendarFilter
+): List<ApiAppointment> {
+    val cal = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
+    return when (filter) {
+        CalendarFilter.DAY -> appointments.filter {
+            isSameDay(it.scheduledAtMillis, selectedDateMillis)
+        }
+        CalendarFilter.WEEK -> {
+            val start = startOfWeek(selectedDateMillis)
+            val end = start + 7 * 24 * 60 * 60 * 1000L
+            appointments.filter { it.scheduledAtMillis in start until end }
+        }
+        CalendarFilter.MONTH -> {
+            val monthCal = Calendar.getInstance().apply { timeInMillis = displayedMonthMillis }
+            val month = monthCal.get(Calendar.MONTH)
+            val year = monthCal.get(Calendar.YEAR)
+            appointments.filter {
+                val apCal = Calendar.getInstance().apply { timeInMillis = it.scheduledAtMillis }
+                apCal.get(Calendar.MONTH) == month && apCal.get(Calendar.YEAR) == year
+            }
+        }
+        CalendarFilter.YEAR -> {
+            val year = cal.get(Calendar.YEAR)
+            appointments.filter {
+                val apCal = Calendar.getInstance().apply { timeInMillis = it.scheduledAtMillis }
+                apCal.get(Calendar.YEAR) == year
+            }
+        }
+    }.sortedBy { it.scheduledAtMillis }
+}
+
+private fun sendAppointmentRequest(
     patientId: String,
     title: String,
-    message: String,
-    reminderAt: String,
-    recurrence: String
-) {
-    if (patientId.isBlank()) return
-    val url = URL("http://localhost:8085/v1/patients/$patientId/reminders")
+    scheduledAt: String,
+    location: String,
+    notes: String
+) : AppointmentResult {
+    if (patientId.isBlank()) return AppointmentResult(false, "patientId vacío")
+    val url = URL("https://calendar-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients/$patientId/appointments")
     val payload = """{
         "title":"${escapeJson(title)}",
-        "message":"${escapeJson(message)}",
-        "reminderAt":"${escapeJson(reminderAt)}",
-        "recurrence":"${escapeJson(recurrence)}"
+        "scheduledAt":"${escapeJson(scheduledAt)}",
+        "location":"${escapeJson(location)}",
+        "notes":"${escapeJson(notes)}"
     }""".trimIndent()
     try {
         val conn = (url.openConnection() as HttpURLConnection).apply {
@@ -641,9 +862,15 @@ private fun sendReminderRequest(
         }
         conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
         val code = conn.responseCode
-        readStream(if (code in 200..299) conn.inputStream else conn.errorStream)
+        val body = readStreamString(if (code in 200..299) conn.inputStream else conn.errorStream)
         conn.disconnect()
-    } catch (_: Exception) {
+        return if (code in 200..299) {
+            AppointmentResult(true, "Cita creada correctamente")
+        } else {
+            AppointmentResult(false, body.ifBlank { "Error creando cita (HTTP $code)" })
+        }
+    } catch (e: Exception) {
+        return AppointmentResult(false, e.message ?: "Error de red")
     }
 }
 
@@ -659,6 +886,13 @@ private fun readStream(stream: java.io.InputStream?) {
     if (stream == null) return
     BufferedReader(InputStreamReader(stream)).use { it.readText() }
 }
+
+private fun readStreamString(stream: java.io.InputStream?): String {
+    if (stream == null) return ""
+    return BufferedReader(InputStreamReader(stream)).use { it.readText() }
+}
+
+private data class AppointmentResult(val success: Boolean, val message: String)
 
 private data class DayCell(val day: Int?, val dateMillis: Long?)
 
@@ -699,6 +933,19 @@ private fun startOfMonth(timestamp: Long): Long {
     val cal = Calendar.getInstance().apply {
         timeInMillis = timestamp
         set(Calendar.DAY_OF_MONTH, 1)
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    return cal.timeInMillis
+}
+
+private fun startOfWeek(timestamp: Long): Long {
+    val cal = Calendar.getInstance().apply {
+        timeInMillis = timestamp
+        firstDayOfWeek = Calendar.SUNDAY
+        set(Calendar.DAY_OF_WEEK, firstDayOfWeek)
         set(Calendar.HOUR_OF_DAY, 0)
         set(Calendar.MINUTE, 0)
         set(Calendar.SECOND, 0)
