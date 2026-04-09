@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,9 +25,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.PersonAddAlt1
 import androidx.compose.material.icons.outlined.NotificationsNone
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.LinkOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -37,15 +39,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +61,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONObject
+import java.util.Locale
 
 class GroupsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,6 +92,9 @@ private val GroupsChip = Color(0xFF64CFA1)
 private val GroupsChipAlt = Color(0xFFE1F2E6)
 private val GroupsNav = Color(0xFF5A7A63)
 private val GroupsCard = Color(0xFFFFFFFF)
+private val GroupsAccent = Color(0xFF4FA6A5)
+private val GroupsBorder = Color(0xFFE1E7E2)
+private val GroupsDanger = Color(0xFFE06A61)
 
 @Composable
 private fun GroupsScreen(onBack: () -> Unit) {
@@ -86,6 +102,17 @@ private fun GroupsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    var caretakers by remember { mutableStateOf<List<CaretakerUi>>(emptyList()) }
+    var emailInput by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var messageSuccess by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        caretakers = withContext(Dispatchers.IO) {
+            fetchCaretakers(PatientSession.patientId)
+        }
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -128,61 +155,116 @@ private fun GroupsScreen(onBack: () -> Unit) {
             ) {
                 item { GroupsTopBar(onMenu = { scope.launch { drawerState.open() } }) }
 
-            item {
-                Text(
-                    text = "Your Groups",
-                    color = GroupsText,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+                item {
+                    InfoCard()
+                }
 
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(
-                        onClick = {},
-                        colors = ButtonDefaults.buttonColors(containerColor = GroupsChip),
-                        shape = RoundedCornerShape(18.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                item {
+                    LinkCaretakerCard(
+                        email = emailInput,
+                        onEmailChange = { emailInput = it; message = null },
+                        isSubmitting = isSubmitting,
+                        onLink = {
+                            if (emailInput.isBlank()) {
+                                message = "Ingresa un correo válido"
+                                messageSuccess = false
+                                return@LinkCaretakerCard
+                            }
+                            isSubmitting = true
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    linkCaretaker(PatientSession.patientId, emailInput.trim())
+                                }
+                                isSubmitting = false
+                                if (result.success) {
+                                    message = "Cuidador vinculado"
+                                    messageSuccess = true
+                                    emailInput = ""
+                                    caretakers = withContext(Dispatchers.IO) {
+                                        fetchCaretakers(PatientSession.patientId)
+                                    }
+                                } else {
+                                    message = result.message
+                                    messageSuccess = false
+                                }
+                            }
+                        }
+                    )
+                }
+
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("New Group", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(
+                            text = "Cuidadores vinculados",
+                            color = GroupsText,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(GroupsChipAlt)
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(caretakers.size.toString(), color = GroupsNav, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
                     }
-                    Button(
-                        onClick = {},
-                        colors = ButtonDefaults.buttonColors(containerColor = GroupsChipAlt),
-                        shape = RoundedCornerShape(18.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Text("Invite User", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GroupsText)
+                }
+
+                if (caretakers.isEmpty()) {
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = GroupsCard
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text("No hay cuidadores vinculados", color = GroupsMuted)
+                            }
+                        }
+                    }
+                } else {
+                    items(caretakers.size) { index ->
+                        val caretaker = caretakers[index]
+                        CaretakerRow(
+                            caretaker = caretaker,
+                            onUnlink = {
+                                scope.launch {
+                                    val result = withContext(Dispatchers.IO) {
+                                        unlinkCaretaker(PatientSession.patientId, caretaker.caretakerId)
+                                    }
+                                    if (result.success) {
+                                        message = "Cuidador desvinculado"
+                                        messageSuccess = true
+                                        caretakers = withContext(Dispatchers.IO) {
+                                            fetchCaretakers(PatientSession.patientId)
+                                        }
+                                    } else {
+                                        message = result.message
+                                        messageSuccess = false
+                                    }
+                                }
+                            }
+                        )
                     }
                 }
             }
-
-            item {
-                GroupRow(
-                    initials = "FS",
-                    name = "Family Share",
-                    detail = "3 members * Steps, Heart Rate"
-                )
-            }
-
-            item {
-                GroupRow(
-                    initials = "TR",
-                    name = "Trainer",
-                    detail = "1 member * All Data"
-                )
-            }
-
-            item {
-                GroupRow(
-                    initials = "CT",
-                    name = "Care Team",
-                    detail = "4 members * Meds, Appointments"
-                )
-            }
-            }
         }
+    }
+
+    message?.let { text ->
+        android.widget.Toast
+            .makeText(context, text, if (messageSuccess) android.widget.Toast.LENGTH_SHORT else android.widget.Toast.LENGTH_LONG)
+            .show()
+        message = null
     }
 }
 
@@ -215,17 +297,95 @@ private fun GroupsTopBar(onMenu: () -> Unit) {
 }
 
 @Composable
-private fun GroupRow(initials: String, name: String, detail: String) {
+private fun InfoCard() {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = Color(0xFFEFF6FF),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD2E4FF))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("¿Para qué sirven los cuidadores?", color = GroupsNav, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text("• Pueden ver tus signos vitales y recibir alertas", color = GroupsNav, fontSize = 12.sp)
+            Text("• Te ayudan a gestionar tu medicación diaria", color = GroupsNav, fontSize = 12.sp)
+            Text("• Reciben notificaciones de tus citas médicas", color = GroupsNav, fontSize = 12.sp)
+            Text("• Pueden coordinar con tu médico en caso de emergencia", color = GroupsNav, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun LinkCaretakerCard(
+    email: String,
+    onEmailChange: (String) -> Unit,
+    isSubmitting: Boolean,
+    onLink: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = GroupsCard,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, GroupsBorder)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("Vincular nuevo cuidador", color = GroupsText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(
+                "Ingresa el correo electrónico del cuidador que deseas vincular.",
+                color = GroupsMuted,
+                fontSize = 12.sp
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = onEmailChange,
+                    leadingIcon = { Icon(Icons.Outlined.Email, contentDescription = null, tint = GroupsMuted) },
+                    placeholder = { Text("correo@ejemplo.com") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                Button(
+                    onClick = onLink,
+                    enabled = !isSubmitting,
+                    colors = ButtonDefaults.buttonColors(containerColor = GroupsChip),
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Text(if (isSubmitting) "Vinculando" else "Vincular", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CaretakerRow(caretaker: CaretakerUi, onUnlink: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = GroupsCard,
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp
+        shadowElevation = 0.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, GroupsBorder)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -236,34 +396,139 @@ private fun GroupRow(initials: String, name: String, detail: String) {
                     .background(GroupsChipAlt),
                 contentAlignment = Alignment.Center
             ) {
-                Text(initials, color = GroupsNav, fontWeight = FontWeight.Bold)
+                Text(caretaker.initials, color = GroupsNav, fontWeight = FontWeight.Bold)
             }
 
             Column(modifier = Modifier.weight(1f)) {
-                Text(name, color = GroupsText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(caretaker.fullName, color = GroupsText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(2.dp))
-                Text(detail, color = GroupsMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(caretaker.email, color = GroupsMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(2.dp))
+                Text(caretaker.linkedAtLabel, color = GroupsMuted, fontSize = 11.sp)
             }
 
-            Card(
-                shape = CircleShape,
-                colors = CardDefaults.cardColors(containerColor = GroupsChipAlt),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            Button(
+                onClick = onUnlink,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFECEC)),
+                shape = RoundedCornerShape(14.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
             ) {
-                IconButton(onClick = {}) {
-                    Icon(Icons.Outlined.Share, contentDescription = "Share", tint = GroupsNav)
-                }
-            }
-
-            Card(
-                shape = CircleShape,
-                colors = CardDefaults.cardColors(containerColor = GroupsChipAlt),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-            ) {
-                IconButton(onClick = {}) {
-                    Icon(Icons.Outlined.Settings, contentDescription = "Settings", tint = GroupsNav)
-                }
+                Icon(Icons.Outlined.LinkOff, contentDescription = "Desvincular", tint = GroupsDanger, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Desvincular", color = GroupsDanger, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
+}
+
+private data class CaretakerUi(
+    val caretakerId: String,
+    val fullName: String,
+    val email: String,
+    val linkedAtLabel: String,
+    val initials: String
+)
+
+private data class CaretakerLinkResult(val success: Boolean, val message: String)
+
+private fun fetchCaretakers(patientId: String): List<CaretakerUi> {
+    if (patientId.isBlank()) return emptyList()
+    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients/$patientId/caretakers")
+    return try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("Content-Type", "application/json")
+            PatientSession.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+            connectTimeout = 10000
+            readTimeout = 10000
+        }
+        val code = conn.responseCode
+        val body = readStreamString(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+        if (code !in 200..299 || body.isBlank()) return emptyList()
+        val json = JSONObject(body)
+        val arr = json.optJSONArray("caretakers") ?: return emptyList()
+        val list = mutableListOf<CaretakerUi>()
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val fullName = item.optString("fullName")
+            list.add(
+                CaretakerUi(
+                    caretakerId = item.optString("caretakerId"),
+                    fullName = fullName,
+                    email = item.optString("email"),
+                    linkedAtLabel = formatLinkedAt(item.optString("linkedAt")),
+                    initials = initialsOf(fullName)
+                )
+            )
+        }
+        list
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+private fun linkCaretaker(patientId: String, email: String): CaretakerLinkResult {
+    if (patientId.isBlank()) return CaretakerLinkResult(false, "patientId vacío")
+    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients/$patientId/caretakers")
+    val caretakerId = java.util.UUID.randomUUID().toString()
+    val payload = """{"caretakerId":"${escapeJson(caretakerId)}","caretakerEmail":"${escapeJson(email)}"}"""
+    return sendCaretakerRequest(url, "POST", payload)
+}
+
+private fun unlinkCaretaker(patientId: String, caretakerId: String): CaretakerLinkResult {
+    if (patientId.isBlank() || caretakerId.isBlank()) return CaretakerLinkResult(false, "Id vacío")
+    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients/$patientId/caretakers/$caretakerId")
+    return sendCaretakerRequest(url, "DELETE", null)
+}
+
+private fun sendCaretakerRequest(url: URL, method: String, payload: String?): CaretakerLinkResult {
+    return try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            setRequestProperty("Content-Type", "application/json")
+            PatientSession.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+            connectTimeout = 10000
+            readTimeout = 10000
+            if (payload != null) {
+                doOutput = true
+                outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+            }
+        }
+        val code = conn.responseCode
+        val body = readStreamString(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+        if (code in 200..299) {
+            CaretakerLinkResult(true, "")
+        } else {
+            CaretakerLinkResult(false, body.ifBlank { "Error (HTTP $code)" })
+        }
+    } catch (e: Exception) {
+        CaretakerLinkResult(false, e.message ?: "Error de red")
+    }
+}
+
+private fun readStreamString(stream: java.io.InputStream?): String {
+    if (stream == null) return ""
+    return BufferedReader(InputStreamReader(stream)).use { it.readText() }
+}
+
+private fun escapeJson(value: String): String {
+    return value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+}
+
+private fun formatLinkedAt(value: String): String {
+    if (value.isBlank()) return "Vinculado recientemente"
+    return "Vinculado el ${value.substring(0, 10)}"
+}
+
+private fun initialsOf(name: String): String {
+    val parts = name.trim().split(" ").filter { it.isNotBlank() }
+    if (parts.isEmpty()) return "?"
+    if (parts.size == 1) return parts.first().take(2).uppercase(Locale.US)
+    return (parts.first().take(1) + parts.last().take(1)).uppercase(Locale.US)
 }
