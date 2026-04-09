@@ -39,6 +39,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -47,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
@@ -154,6 +158,7 @@ private fun CareScreen(onBack: () -> Unit) {
     val logDao = remember { AppDatabase.getInstance(context).medicationLogDao() }
     val scope = rememberCoroutineScope()
     val medications by dao.observeAll().collectAsState(initial = emptyList())
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
     var showSheet by remember { mutableStateOf(false) }
     var editingItem by remember { mutableStateOf<MedicationEntity?>(null) }
@@ -180,31 +185,46 @@ private fun CareScreen(onBack: () -> Unit) {
         medications.filter { it.enabled }.forEach { scheduleMedication(context, it) }
     }
 
-    Scaffold(
-        containerColor = CareBackground,
-        bottomBar = {
-            AppBottomNav(
-                current = BottomNavDestination.CARE,
-                modifier = Modifier,
-                indicatorColor = CareChipAlt,
-                selectedColor = CareNav,
-                unselectedColor = CareNav.copy(alpha = 0.5f)
-            )
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                RoleDrawerContent(
+                    role = PatientSession.currentUser?.role,
+                    current = DrawerDestination.MEDICATIONS,
+                    onItemClick = { destination ->
+                        handleDrawerNavigation(context, destination)
+                        scope.launch { drawerState.close() }
+                    }
+                )
+            }
         }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(CareBackground),
-            contentPadding = PaddingValues(
-                start = 18.dp,
-                top = innerPadding.calculateTopPadding() + 12.dp,
-                end = 18.dp,
-                bottom = innerPadding.calculateBottomPadding() + 18.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item { CareTopBar(onBack) }
+    ) {
+        Scaffold(
+            containerColor = CareBackground,
+            bottomBar = {
+                AppBottomNav(
+                    current = BottomNavDestination.CARE,
+                    modifier = Modifier,
+                    indicatorColor = CareChipAlt,
+                    selectedColor = CareNav,
+                    unselectedColor = CareNav.copy(alpha = 0.5f)
+                )
+            }
+        ) { innerPadding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(CareBackground),
+                contentPadding = PaddingValues(
+                    start = 18.dp,
+                    top = innerPadding.calculateTopPadding() + 12.dp,
+                    end = 18.dp,
+                    bottom = innerPadding.calculateBottomPadding() + 18.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item { CareTopBar(onMenu = { scope.launch { drawerState.open() } }) }
 
             item {
                 Row(
@@ -380,6 +400,7 @@ private fun CareScreen(onBack: () -> Unit) {
                     }
                 }
             )
+            }
         }
     }
 }
@@ -430,14 +451,14 @@ private fun cancelMedication(context: android.content.Context, item: MedicationE
 }
 
 @Composable
-private fun CareTopBar(onBack: () -> Unit) {
+private fun CareTopBar(onMenu: () -> Unit) {
     val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        IconButton(onClick = onBack) {
+        IconButton(onClick = onMenu) {
             Icon(Icons.Filled.Menu, contentDescription = "Back", tint = CareNav)
         }
         Box(

@@ -200,36 +200,14 @@ private fun DashboardScreen(onBack: () -> Unit) {
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text("Menu", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Button(
-                        onClick = {
-                            context.startActivity(Intent(context, SettingsActivity::class.java))
-                            scope.launch { drawerState.close() }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = DashboardChip),
-                        shape = RoundedCornerShape(16.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                    ) {
-                        Text("Settings", fontWeight = FontWeight.Bold)
+                RoleDrawerContent(
+                    role = PatientSession.currentUser?.role,
+                    current = DrawerDestination.DASHBOARD,
+                    onItemClick = { destination ->
+                        handleDrawerNavigation(context, destination)
+                        scope.launch { drawerState.close() }
                     }
-                    Button(
-                        onClick = {
-                            showChangePassword = true
-                            scope.launch { drawerState.close() }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = DashboardChip),
-                        shape = RoundedCornerShape(16.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                    ) {
-                        Text("Change password", fontWeight = FontWeight.Bold)
-                    }
-                }
+                )
             }
         }
     ) {

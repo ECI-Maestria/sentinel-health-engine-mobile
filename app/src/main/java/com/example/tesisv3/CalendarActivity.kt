@@ -40,6 +40,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -47,6 +50,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -127,36 +131,52 @@ private fun CalendarScreen(onBack: () -> Unit) {
     var selectedFilter by remember { mutableStateOf(CalendarFilter.DAY) }
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
     var feedbackSuccess by remember { mutableStateOf(true) }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
     LaunchedEffect(Unit) {
         apiAppointments = withContext(Dispatchers.IO) { fetchAppointments(PatientSession.patientId) }
     }
 
-    Scaffold(
-        containerColor = CalendarBackground,
-        bottomBar = {
-            AppBottomNav(
-                current = BottomNavDestination.CALENDAR,
-                modifier = Modifier,
-                indicatorColor = CalendarChipAlt,
-                selectedColor = CalendarNav,
-                unselectedColor = CalendarNav.copy(alpha = 0.5f)
-            )
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                RoleDrawerContent(
+                    role = PatientSession.currentUser?.role,
+                    current = DrawerDestination.DOCTOR_CALENDAR,
+                    onItemClick = { destination ->
+                        handleDrawerNavigation(context, destination)
+                        scope.launch { drawerState.close() }
+                    }
+                )
+            }
         }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(CalendarBackground),
-            contentPadding = PaddingValues(
-                start = 18.dp,
-                top = innerPadding.calculateTopPadding() + 12.dp,
-                end = 18.dp,
-                bottom = innerPadding.calculateBottomPadding() + 18.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item { CalendarTopBar(onBack) }
+    ) {
+        Scaffold(
+            containerColor = CalendarBackground,
+            bottomBar = {
+                AppBottomNav(
+                    current = BottomNavDestination.CALENDAR,
+                    modifier = Modifier,
+                    indicatorColor = CalendarChipAlt,
+                    selectedColor = CalendarNav,
+                    unselectedColor = CalendarNav.copy(alpha = 0.5f)
+                )
+            }
+        ) { innerPadding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(CalendarBackground),
+                contentPadding = PaddingValues(
+                    start = 18.dp,
+                    top = innerPadding.calculateTopPadding() + 12.dp,
+                    end = 18.dp,
+                    bottom = innerPadding.calculateBottomPadding() + 18.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item { CalendarTopBar(onMenu = { scope.launch { drawerState.open() } }) }
 
             item {
                 CalendarCard(
@@ -220,6 +240,7 @@ private fun CalendarScreen(onBack: () -> Unit) {
                 }
             }
 
+            }
         }
     }
 
@@ -306,14 +327,14 @@ private fun CalendarScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun CalendarTopBar(onBack: () -> Unit) {
+private fun CalendarTopBar(onMenu: () -> Unit) {
     val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        IconButton(onClick = onBack) {
+        IconButton(onClick = onMenu) {
             Icon(Icons.Filled.Menu, contentDescription = "Back", tint = CalendarNav)
         }
         Box(

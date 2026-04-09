@@ -35,13 +35,17 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -104,6 +108,7 @@ private fun DoctorPatientsScreen(refreshOnStart: Boolean) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var hasRefreshed by remember { mutableStateOf(false) }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
     fun loadPatients() {
         if (isLoading) return
@@ -127,32 +132,50 @@ private fun DoctorPatientsScreen(refreshOnStart: Boolean) {
         loadPatients()
     }
 
-    Scaffold(
-        containerColor = PatientsBackground,
-        bottomBar = {
-            DoctorBottomNav(
-                selected = selectedTab,
-                onSelect = { selectedTab = it }
-            )
-        }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(PatientsBackground),
-            contentPadding = PaddingValues(
-                start = 18.dp,
-                top = innerPadding.calculateTopPadding() + 12.dp,
-                end = 18.dp,
-                bottom = innerPadding.calculateBottomPadding() + 20.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item {
-                DoctorTopBar(onNotifications = {
-                    context.startActivity(android.content.Intent(context, NotificationsActivity::class.java))
-                })
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                RoleDrawerContent(
+                    role = PatientSession.currentUser?.role,
+                    current = DrawerDestination.DOCTOR_PANEL,
+                    onItemClick = { destination ->
+                        handleDrawerNavigation(context, destination)
+                        scope.launch { drawerState.close() }
+                    }
+                )
             }
+        }
+    ) {
+        Scaffold(
+            containerColor = PatientsBackground,
+            bottomBar = {
+                DoctorBottomNav(
+                    selected = selectedTab,
+                    onSelect = { selectedTab = it }
+                )
+            }
+        ) { innerPadding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(PatientsBackground),
+                contentPadding = PaddingValues(
+                    start = 18.dp,
+                    top = innerPadding.calculateTopPadding() + 12.dp,
+                    end = 18.dp,
+                    bottom = innerPadding.calculateBottomPadding() + 20.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    DoctorTopBar(
+                        onMenu = { scope.launch { drawerState.open() } },
+                        onNotifications = {
+                            context.startActivity(android.content.Intent(context, NotificationsActivity::class.java))
+                        }
+                    )
+                }
 
             item {
                 DoctorSummaryCard(
@@ -245,8 +268,9 @@ private fun DoctorPatientsScreen(refreshOnStart: Boolean) {
                 SectionHeader(title = "Mis Pacientes", actionLabel = "Ver todos")
             }
 
-            items(mockDoctorPatients()) { patient ->
-                DoctorPatientCard(patient = patient)
+                items(mockDoctorPatients()) { patient ->
+                    DoctorPatientCard(patient = patient)
+                }
             }
         }
     }
@@ -254,14 +278,14 @@ private fun DoctorPatientsScreen(refreshOnStart: Boolean) {
 }
 
 @Composable
-private fun DoctorTopBar(onNotifications: () -> Unit) {
+private fun DoctorTopBar(onMenu: () -> Unit, onNotifications: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         IconButton(
-            onClick = {},
+            onClick = onMenu,
             modifier = Modifier
                 .size(42.dp)
                 .clip(RoundedCornerShape(14.dp))

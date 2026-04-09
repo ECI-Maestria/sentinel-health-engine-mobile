@@ -34,13 +34,18 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +55,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 class GroupsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,32 +83,50 @@ private val GroupsCard = Color(0xFFFFFFFF)
 @Composable
 private fun GroupsScreen(onBack: () -> Unit) {
     var selectedNav by remember { mutableIntStateOf(1) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
-    Scaffold(
-        containerColor = GroupsBackground,
-        bottomBar = {
-            AppBottomNav(
-                current = BottomNavDestination.GROUPS,
-                modifier = Modifier.navigationBarsPadding(),
-                indicatorColor = GroupsChipAlt,
-                selectedColor = GroupsNav,
-                unselectedColor = GroupsNav.copy(alpha = 0.5f)
-            )
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                RoleDrawerContent(
+                    role = PatientSession.currentUser?.role,
+                    current = DrawerDestination.GROUPS,
+                    onItemClick = { destination ->
+                        handleDrawerNavigation(context, destination)
+                        scope.launch { drawerState.close() }
+                    }
+                )
+            }
         }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(GroupsBackground),
-            contentPadding = PaddingValues(
-                start = 18.dp,
-                top = innerPadding.calculateTopPadding() + 12.dp,
-                end = 18.dp,
-                bottom = innerPadding.calculateBottomPadding() + 18.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item { GroupsTopBar(onBack) }
+    ) {
+        Scaffold(
+            containerColor = GroupsBackground,
+            bottomBar = {
+                AppBottomNav(
+                    current = BottomNavDestination.GROUPS,
+                    modifier = Modifier.navigationBarsPadding(),
+                    indicatorColor = GroupsChipAlt,
+                    selectedColor = GroupsNav,
+                    unselectedColor = GroupsNav.copy(alpha = 0.5f)
+                )
+            }
+        ) { innerPadding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(GroupsBackground),
+                contentPadding = PaddingValues(
+                    start = 18.dp,
+                    top = innerPadding.calculateTopPadding() + 12.dp,
+                    end = 18.dp,
+                    bottom = innerPadding.calculateBottomPadding() + 18.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item { GroupsTopBar(onMenu = { scope.launch { drawerState.open() } }) }
 
             item {
                 Text(
@@ -157,19 +181,20 @@ private fun GroupsScreen(onBack: () -> Unit) {
                     detail = "4 members * Meds, Appointments"
                 )
             }
+            }
         }
     }
 }
 
 @Composable
-private fun GroupsTopBar(onBack: () -> Unit) {
+private fun GroupsTopBar(onMenu: () -> Unit) {
     val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        IconButton(onClick = onBack) {
+        IconButton(onClick = onMenu) {
             Icon(Icons.Filled.Menu, contentDescription = "Back", tint = GroupsNav)
         }
         Box(

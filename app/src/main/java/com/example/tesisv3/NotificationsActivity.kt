@@ -21,7 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -30,9 +30,13 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -80,23 +84,39 @@ private fun NotificationsScreen(onBack: () -> Unit) {
     val dao = remember { AppDatabase.getInstance(context).notificationDao() }
     val scope = rememberCoroutineScope()
     val notifications by dao.observeAll().collectAsState(initial = emptyList())
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
-    Scaffold(
-        containerColor = NotificationsBackground
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(NotificationsBackground),
-            contentPadding = PaddingValues(
-                start = 18.dp,
-                top = innerPadding.calculateTopPadding() + 12.dp,
-                end = 18.dp,
-                bottom = innerPadding.calculateBottomPadding() + 18.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item { NotificationsTopBar(onBack) }
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                RoleDrawerContent(
+                    role = PatientSession.currentUser?.role,
+                    current = DrawerDestination.DASHBOARD,
+                    onItemClick = { destination ->
+                        handleDrawerNavigation(context, destination)
+                        scope.launch { drawerState.close() }
+                    }
+                )
+            }
+        }
+    ) {
+        Scaffold(
+            containerColor = NotificationsBackground
+        ) { innerPadding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(NotificationsBackground),
+                contentPadding = PaddingValues(
+                    start = 18.dp,
+                    top = innerPadding.calculateTopPadding() + 12.dp,
+                    end = 18.dp,
+                    bottom = innerPadding.calculateBottomPadding() + 18.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item { NotificationsTopBar(onMenu = { scope.launch { drawerState.open() } }) }
 
             item {
                 Row(
@@ -149,19 +169,20 @@ private fun NotificationsScreen(onBack: () -> Unit) {
                     )
                 }
             }
+            }
         }
     }
 }
 
 @Composable
-private fun NotificationsTopBar(onBack: () -> Unit) {
+private fun NotificationsTopBar(onMenu: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = NotificationsNav)
+        IconButton(onClick = onMenu) {
+            Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = NotificationsNav)
         }
         Box(
             modifier = Modifier
