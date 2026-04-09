@@ -1,6 +1,9 @@
 package com.example.tesisv3
 
 import android.content.Context
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import android.os.Build
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.CoroutineScope
@@ -13,40 +16,40 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.coroutines.resume
-import org.json.JSONObject
-import org.json.JSONTokener
 
 object DeviceRegistrationManager {
-    private const val PREFS = "device_registration"
-    private const val KEY_REGISTERED = "registered"
     private const val REGISTER_URL = "https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/devices/register"
+    private const val PREFS = "device_secure_store"
+    private const val KEY_DEVICE_UUID = "device_uuid"
+    private const val KEY_LAST_RESULT = "last_register_result"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    @Volatile private var registeredInMemory = false
-
-    fun isRegistered(context: Context): Boolean {
-        if (registeredInMemory) return true
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val stored = prefs.getBoolean(KEY_REGISTERED, false)
-        if (stored) registeredInMemory = true
-        return stored
-    }
-
     fun registerIfNeeded(context: Context) {
-        if (isRegistered(context)) return
         val appContext = context.applicationContext
         scope.launch {
             val token = fetchFcmToken() ?: return@launch
-            val alreadyRegistered = isDeviceAlreadyRegistered(appContext, token)
-            if (alreadyRegistered) {
-                markRegistered(appContext)
-                return@launch
-            }
-            val success = registerDevice(appContext, token, token)
-            if (success) {
-                markRegistered(appContext)
-            }
+            val deviceId = getOrCreateDeviceUuid(appContext)
+            val result = registerDevice(appContext, token, deviceId)
+            saveLastResult(appContext, result)
         }
+    }
+
+    fun consumeLastResult(context: Context): DeviceRegisterResult? {
+        val prefs = encryptedPrefs(context)
+        val raw = prefs.getString(KEY_LAST_RESULT, null) ?: return null
+        prefs.edit().remove(KEY_LAST_RESULT).apply()
+        val parts = raw.split("|", limit = 4)
+        if (parts.size < 4) return null
+        return DeviceRegisterResult(
+            success = parts[0].toBooleanStrictOrNull() ?: false,
+            code = parts[1].toIntOrNull(),
+            body = parts[2].ifBlank { null },
+            error = parts[3].ifBlank { null }
+        )
+    }
+
+    fun getDeviceUuid(context: Context): String {
+        return getOrCreateDeviceUuid(context.applicationContext)
     }
 
     private suspend fun fetchFcmToken(): String? {
@@ -57,7 +60,7 @@ object DeviceRegistrationManager {
         }
     }
 
-    private fun registerDevice(context: Context, fcmToken: String, deviceIdentifier: String): Boolean {
+    private fun registerDevice(context: Context, fcmToken: String, deviceIdentifier: String): DeviceRegisterResult {
         val name = Build.MODEL ?: "Android"
         val payload = """{
             "deviceIdentifier":"${escapeJson(deviceIdentifier)}",
@@ -67,61 +70,50 @@ object DeviceRegistrationManager {
         }""".trimIndent()
 
         return try {
+            val token = PatientSession.accessToken
             val conn = (URL(REGISTER_URL).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 setRequestProperty("Content-Type", "application/json")
-                PatientSession.accessToken?.let {
-                    setRequestProperty("Authorization", "Bearer $it")
-                }
+                setRequestProperty("Authorization", "Bearer $token")
                 connectTimeout = 10000
                 readTimeout = 10000
                 doOutput = true
             }
             conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
-            readStream(if (code in 200..299) conn.inputStream else conn.errorStream)
-            conn.disconnect()
-            code in 200..299
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun isDeviceAlreadyRegistered(context: Context, deviceIdentifier: String): Boolean {
-        val patientId = PatientSession.patientId
-        if (patientId.isEmpty()) return false
-        val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients/$patientId/profile/complete")
-        return try {
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                PatientSession.accessToken?.let {
-                    setRequestProperty("Authorization", "Bearer $it")
-                }
-                connectTimeout = 10000
-                readTimeout = 10000
-            }
-            val code = conn.responseCode
             val body = readStream(if (code in 200..299) conn.inputStream else conn.errorStream)
             conn.disconnect()
-            if (code !in 200..299 || body.isEmpty()) return false
-            val json = JSONObject(JSONTokener(body))
-            val devices = json.optJSONArray("devices") ?: return false
-            for (i in 0 until devices.length()) {
-                val device = devices.optJSONObject(i) ?: continue
-                if (deviceIdentifier == device.optString("deviceIdentifier")) {
-                    return true
-                }
+            if (code in 200..299) {
+                DeviceRegisterResult(success = true, code = code, body = body)
+            } else {
+                DeviceRegisterResult(success = false, code = code, body = body, error = "$token + HTTP $code")
             }
-            false
-        } catch (_: Exception) {
-            false
+        } catch (e: Exception) {
+            DeviceRegisterResult(success = false, error = e.message ?: "Network error")
         }
     }
 
-    private fun markRegistered(context: Context) {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        prefs.edit().putBoolean(KEY_REGISTERED, true).apply()
-        registeredInMemory = true
+    private fun getOrCreateDeviceUuid(context: Context): String {
+        val prefs = encryptedPrefs(context)
+        val existing = prefs.getString(KEY_DEVICE_UUID, null)
+        if (!existing.isNullOrBlank()) return existing
+        val uuid = java.util.UUID.randomUUID().toString()
+        prefs.edit().putString(KEY_DEVICE_UUID, uuid).apply()
+        return uuid
+    }
+
+    private fun encryptedPrefs(context: Context): SharedPreferences = EncryptedSharedPreferences.create(
+        context,
+        PREFS,
+        masterKey(context),
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    )
+
+    private fun masterKey(context: Context): MasterKey {
+        return MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
     }
 
     private fun escapeJson(value: String): String {
@@ -136,4 +128,21 @@ object DeviceRegistrationManager {
         if (stream == null) return ""
         return BufferedReader(InputStreamReader(stream)).use { it.readText() }
     }
+
+    private fun saveLastResult(context: Context, result: DeviceRegisterResult) {
+        val raw = listOf(
+            result.success.toString(),
+            result.code?.toString().orEmpty(),
+            result.body.orEmpty(),
+            result.error.orEmpty()
+        ).joinToString("|")
+        encryptedPrefs(context).edit().putString(KEY_LAST_RESULT, raw).apply()
+    }
 }
+
+data class DeviceRegisterResult(
+    val success: Boolean,
+    val code: Int? = null,
+    val body: String? = null,
+    val error: String? = null
+)

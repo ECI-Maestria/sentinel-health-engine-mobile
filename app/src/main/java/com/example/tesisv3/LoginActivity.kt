@@ -291,6 +291,7 @@ private fun LoginScreen(onLoginDestination: (LoginDestination) -> Unit) {
                                             PatientSession.patientId = profile.id
                                         }
                                     }
+                                    DeviceRegistrationManager.registerIfNeeded(context)
                                     val role = PatientSession.currentUser?.role
                                     if (role != null && role.equals("DOCTOR", ignoreCase = true)) {
                                         onLoginDestination(LoginDestination.DOCTOR)

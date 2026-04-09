@@ -26,7 +26,6 @@ class  MyApplication : Application() {
         }
         DynamicColors.applyToActivitiesIfAvailable(this)
         AppContextHolder.init(this)
-        DeviceRegistrationManager.registerIfNeeded(this)
         scheduleDailyReset()
     }
 
