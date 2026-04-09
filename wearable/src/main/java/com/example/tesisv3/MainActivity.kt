@@ -404,6 +404,10 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
         }
 
         val spo2 = lastSpO2Value ?: 0
+        if (spo2 == 0) {
+            binding.messagelogTextView.append("\nSpO2 0 omitido: no se envía agregado")
+            return
+        }
         val timestamp = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString()
         val json = "{ \"deviceId\": \"UUID\", \"heartRate\": $hr, \"spO2\": $spo2, \"timestamp\": \"${timestamp}\" }"
 

@@ -8,6 +8,7 @@ object IotSettings {
     private const val PREFS = "iot_settings"
     private const val KEY_TRANSPORT = "transport"
     private const val KEY_DIAGNOSTIC = "mqtt_diagnostic"
+    private const val KEY_DEVICE_REGISTER_MODAL = "device_register_modal"
 
     fun getTransport(context: Context): TransportType {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -28,5 +29,15 @@ object IotSettings {
     fun setDiagnosticEnabled(context: Context, enabled: Boolean) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_DIAGNOSTIC, enabled).apply()
+    }
+
+    fun isDeviceRegisterModalEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_DEVICE_REGISTER_MODAL, false)
+    }
+
+    fun setDeviceRegisterModalEnabled(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_DEVICE_REGISTER_MODAL, enabled).apply()
     }
 }

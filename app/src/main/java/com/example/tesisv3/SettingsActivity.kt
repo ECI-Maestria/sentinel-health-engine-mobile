@@ -72,6 +72,7 @@ private fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var transport by remember { mutableStateOf(IotSettings.getTransport(context)) }
     var diagnostic by remember { mutableStateOf(IotSettings.isDiagnosticEnabled(context)) }
+    var showRegisterModal by remember { mutableStateOf(IotSettings.isDeviceRegisterModalEnabled(context)) }
 
     Column(
         modifier = Modifier
@@ -154,6 +155,41 @@ private fun SettingsScreen(onBack: () -> Unit) {
                     onCheckedChange = {
                         diagnostic = it
                         IotSettings.setDiagnosticEnabled(context, it)
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = SettingsChip,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = SettingsChipAlt
+                    )
+                )
+            }
+        }
+
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = SettingsCard
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Device Registration Modal", color = SettingsText, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Show the register-device result popup after login.",
+                        color = SettingsMuted,
+                        fontSize = 12.sp
+                    )
+                }
+                Switch(
+                    checked = showRegisterModal,
+                    onCheckedChange = {
+                        showRegisterModal = it
+                        IotSettings.setDeviceRegisterModalEnabled(context, it)
                     },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,

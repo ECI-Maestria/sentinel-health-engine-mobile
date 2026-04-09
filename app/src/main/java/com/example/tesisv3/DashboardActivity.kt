@@ -182,17 +182,19 @@ private fun DashboardScreen(onBack: () -> Unit) {
     }
 
     LaunchedEffect(Unit) {
-        val result = withContext(Dispatchers.IO) {
-            DeviceRegistrationManager.consumeLastResult(context)
-        }
-        if (result != null) {
-            registerDetails = buildString {
-                append("Success: ${result.success}\n")
-                append("HTTP: ${result.code ?: "N/A"}\n")
-                append("Body: ${result.body ?: "N/A"}\n")
-                append("Error: ${result.error ?: "N/A"}")
+        if (IotSettings.isDeviceRegisterModalEnabled(context)) {
+            val result = withContext(Dispatchers.IO) {
+                DeviceRegistrationManager.consumeLastResult(context)
             }
-            showRegisterDialog = true
+            if (result != null) {
+                registerDetails = buildString {
+                    append("Success: ${result.success}\n")
+                    append("HTTP: ${result.code ?: "N/A"}\n")
+                    append("Body: ${result.body ?: "N/A"}\n")
+                    append("Error: ${result.error ?: "N/A"}")
+                }
+                showRegisterDialog = true
+            }
         }
     }
 

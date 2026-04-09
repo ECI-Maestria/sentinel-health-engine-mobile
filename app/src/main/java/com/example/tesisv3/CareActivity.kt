@@ -1,13 +1,10 @@
 package com.example.tesisv3
 
-import android.Manifest
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,18 +41,15 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.material3.rememberDrawerState
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,26 +63,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.core.content.ContextCompat
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.workDataOf
-import com.example.tesisv3.data.AppDatabase
-import com.example.tesisv3.data.MedicationEntity
-import com.example.tesisv3.data.MedicationLogEntity
 import android.content.Intent
+import android.app.DatePickerDialog
 import kotlinx.coroutines.launch
-import java.util.Calendar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.Locale
-import java.util.UUID
-import java.util.concurrent.TimeUnit
-
-enum class ScheduleType {
-    SPECIFIC,
-    EVERY_X
-}
+import java.util.Calendar
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONArray
+import org.json.JSONObject
 
 class CareActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -115,74 +102,35 @@ private val CareNav = Color(0xFF5A7A63)
 private val CareWarn = Color(0xFFE0A04B)
 private val CareError = Color(0xFFE06A61)
 
-private fun MedicationEntity.displaySchedule(): String {
-    return when (scheduleType) {
-        ScheduleType.SPECIFIC.name -> {
-            val h = hourOfDay ?: 0
-            val m = minute ?: 0
-            val hour12 = if (h % 12 == 0) 12 else h % 12
-            val amPm = if (h < 12) "AM" else "PM"
-            "Daily at %d:%02d %s".format(Locale.US, hour12, m, amPm)
-        }
-        else -> "Every ${intervalHours ?: 1}h"
+private fun frequencyLabel(value: String): String {
+    return when (value.uppercase(Locale.US)) {
+        "ONCE_DAILY" -> "Once daily"
+        "TWICE_DAILY" -> "Twice daily"
+        "THREE_TIMES_DAILY" -> "3 times daily"
+        "EVERY_4_HOURS" -> "Every 4 hours"
+        "EVERY_6_HOURS" -> "Every 6 hours"
+        "EVERY_8_HOURS" -> "Every 8 hours"
+        else -> value.replace("_", " ").lowercase(Locale.US).replaceFirstChar { it.uppercase() }
     }
-}
-
-private fun statusColor(status: String): Color {
-    return when (status) {
-        "Taken" -> CareChip
-        "Late" -> CareWarn
-        "Missed" -> CareError
-        else -> CareWarn
-    }
-}
-
-private fun isPastScheduledTimeToday(item: MedicationEntity): Boolean {
-    if (item.scheduleType != ScheduleType.SPECIFIC.name) return false
-    val hour = item.hourOfDay ?: return false
-    val minute = item.minute ?: return false
-    val now = Calendar.getInstance()
-    val target = Calendar.getInstance().apply {
-        set(Calendar.HOUR_OF_DAY, hour)
-        set(Calendar.MINUTE, minute)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }
-    return now.after(target)
 }
 
 @Composable
 private fun CareScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val dao = remember { AppDatabase.getInstance(context).medicationDao() }
-    val logDao = remember { AppDatabase.getInstance(context).medicationLogDao() }
     val scope = rememberCoroutineScope()
-    val medications by dao.observeAll().collectAsState(initial = emptyList())
+    var medications by remember { mutableStateOf<List<ApiMedication>>(emptyList()) }
+    var feedbackMessage by remember { mutableStateOf<String?>(null) }
+    var feedbackSuccess by remember { mutableStateOf(true) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
     var showSheet by remember { mutableStateOf(false) }
-    var editingItem by remember { mutableStateOf<MedicationEntity?>(null) }
-    var deletingItem by remember { mutableStateOf<MedicationEntity?>(null) }
-    var statusItem by remember { mutableStateOf<MedicationEntity?>(null) }
-    var pendingEnableId by remember { mutableStateOf<String?>(null) }
+    var editingItem by remember { mutableStateOf<ApiMedication?>(null) }
+    var deletingItem by remember { mutableStateOf<ApiMedication?>(null) }
 
-    val requestPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        val id = pendingEnableId
-        if (granted && id != null) {
-            scope.launch {
-                dao.getById(id)?.let { scheduleMedication(context, it) }
-            }
+    LaunchedEffect(Unit) {
+        medications = withContext(Dispatchers.IO) {
+            fetchMedications(PatientSession.patientId)
         }
-        pendingEnableId = null
-    }
-
-    LaunchedEffect(medications) {
-        medications
-            .filter { it.status == "Due" && isPastScheduledTimeToday(it) }
-            .forEach { dao.update(it.copy(status = "Missed")) }
-        medications.filter { it.enabled }.forEach { scheduleMedication(context, it) }
     }
 
     ModalNavigationDrawer(
@@ -256,34 +204,28 @@ private fun CareScreen(onBack: () -> Unit) {
                 val item = medications[index]
                 MedicationRow(
                     name = item.name,
-                    detail = "${item.amount} * ${item.displaySchedule()}",
-                    badgeText = item.status,
-                    badgeColor = statusColor(item.status),
-                    isOn = item.enabled,
-                    onClick = { statusItem = item },
+                    detail = "${item.dosage} · ${frequencyLabel(item.frequency)}",
+                    subDetail = buildString {
+                        if (item.scheduledTimes.isNotEmpty()) {
+                            append(item.scheduledTimes.joinToString(", "))
+                        }
+                        if (item.startDate.isNotBlank() || item.endDate.isNotBlank()) {
+                            if (isNotEmpty()) append(" · ")
+                            append(item.startDate)
+                            if (item.endDate.isNotBlank()) {
+                                append(" → ").append(item.endDate)
+                            }
+                        }
+                    },
+                    badgeText = if (item.active) "Activo" else "Inactivo",
+                    badgeColor = if (item.active) CareChip else CareWarn,
+                    onClick = { editingItem = item; showSheet = true },
                     onEdit = {
                         editingItem = item
                         showSheet = true
                     },
                     onDelete = { deletingItem = item },
-                    onToggle = { enabled ->
-                        scope.launch { dao.update(item.copy(enabled = enabled)) }
-                        if (enabled) {
-                            if (Build.VERSION.SDK_INT >= 33 &&
-                                ContextCompat.checkSelfPermission(
-                                    context,
-                                    Manifest.permission.POST_NOTIFICATIONS
-                                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                            ) {
-                                pendingEnableId = item.id
-                                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            } else {
-                                scheduleMedication(context, item.copy(enabled = true))
-                            }
-                        } else {
-                            cancelMedication(context, item)
-                        }
-                    }
+                    onToggle = null
                 )
             }
         }
@@ -294,19 +236,26 @@ private fun CareScreen(onBack: () -> Unit) {
                 existing = editingItem,
                 onSave = { newItem ->
                     scope.launch {
-                        if (editingItem == null) {
-                            dao.insert(newItem)
+                        val result = withContext(Dispatchers.IO) {
+                            if (editingItem == null) {
+                                createMedication(PatientSession.patientId, newItem)
+                            } else {
+                                updateMedication(PatientSession.patientId, newItem)
+                            }
+                        }
+                        if (result.success) {
+                            medications = withContext(Dispatchers.IO) {
+                                fetchMedications(PatientSession.patientId)
+                            }
+                            feedbackMessage = if (editingItem == null) "Medicamento creado" else "Medicamento actualizado"
+                            feedbackSuccess = true
                         } else {
-                            dao.update(newItem)
+                            feedbackMessage = result.message
+                            feedbackSuccess = false
                         }
                     }
                     showSheet = false
                     editingItem = null
-                    if (newItem.enabled) {
-                        scheduleMedication(context, newItem)
-                    } else {
-                        cancelMedication(context, newItem)
-                    }
                 }
             )
         }
@@ -320,9 +269,22 @@ private fun CareScreen(onBack: () -> Unit) {
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            item?.let {
-                                scope.launch { dao.delete(it) }
-                                cancelMedication(context, it)
+                            item?.let { med ->
+                                scope.launch {
+                                    val result = withContext(Dispatchers.IO) {
+                                        deleteMedication(PatientSession.patientId, med.id)
+                                    }
+                                    if (result.success) {
+                                        medications = withContext(Dispatchers.IO) {
+                                            fetchMedications(PatientSession.patientId)
+                                        }
+                                        feedbackMessage = "Medicamento eliminado"
+                                        feedbackSuccess = true
+                                    } else {
+                                        feedbackMessage = result.message
+                                        feedbackSuccess = false
+                                    }
+                                }
                             }
                             deletingItem = null
                         }
@@ -333,121 +295,15 @@ private fun CareScreen(onBack: () -> Unit) {
                 }
             )
         }
-
-        if (statusItem != null) {
-            val item = statusItem
-            AlertDialog(
-                onDismissRequest = { statusItem = null },
-                title = { Text("Medication status") },
-                text = { Text("Update status for ${item?.name}") },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            item?.let {
-                                val updated = it.copy(status = "Taken")
-                                scope.launch {
-                                    dao.update(updated)
-                                    logDao.insert(
-                                        MedicationLogEntity(
-                                            id = UUID.randomUUID().toString(),
-                                            medicationId = it.id,
-                                            medicationName = it.name,
-                                            status = "Taken",
-                                            takenAt = System.currentTimeMillis()
-                                        )
-                                    )
-                                }
-                            }
-                            statusItem = null
-                        }
-                    ) { Text("Taken") }
-                },
-                dismissButton = {
-                    Row {
-                        TextButton(
-                            onClick = {
-                                item?.let {
-                                    val updated = it.copy(status = "Late")
-                                    scope.launch {
-                                        dao.update(updated)
-                                        logDao.insert(
-                                            MedicationLogEntity(
-                                                id = UUID.randomUUID().toString(),
-                                                medicationId = it.id,
-                                                medicationName = it.name,
-                                                status = "Late",
-                                                takenAt = System.currentTimeMillis()
-                                            )
-                                        )
-                                    }
-                                }
-                                statusItem = null
-                            }
-                        ) { Text("Taken late") }
-
-                        if (item != null && isPastScheduledTimeToday(item)) {
-                            TextButton(
-                                onClick = {
-                                    item.let { med ->
-                                        scope.launch { dao.update(med.copy(status = "Missed")) }
-                                    }
-                                    statusItem = null
-                                }
-                            ) { Text("Mark missed") }
-                        }
-
-                        TextButton(onClick = { statusItem = null }) { Text("Cancel") }
-                    }
-                }
-            )
-            }
+        feedbackMessage?.let { message ->
+            android.widget.Toast
+                .makeText(context, message, if (feedbackSuccess) android.widget.Toast.LENGTH_SHORT else android.widget.Toast.LENGTH_LONG)
+                .show()
+            feedbackMessage = null
         }
     }
 }
 
-private fun scheduleMedication(context: android.content.Context, item: MedicationEntity) {
-    val workManager = WorkManager.getInstance(context)
-
-    val data = workDataOf(
-        "med_id" to item.id,
-        "name" to item.name,
-        "amount" to item.amount,
-        "schedule" to item.displaySchedule(),
-        "type" to item.medType
-    )
-
-    val request = if (item.scheduleType == ScheduleType.SPECIFIC.name) {
-        val now = Calendar.getInstance()
-        val target = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, item.hourOfDay ?: 0)
-            set(Calendar.MINUTE, item.minute ?: 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        if (target.before(now)) {
-            target.add(Calendar.DAY_OF_YEAR, 1)
-        }
-        val delay = target.timeInMillis - now.timeInMillis
-        PeriodicWorkRequestBuilder<MedicationReminderWorker>(24, TimeUnit.HOURS)
-            .setInitialDelay(delay, TimeUnit.MILLISECONDS)
-            .setInputData(data)
-            .build()
-    } else {
-        val hours = (item.intervalHours ?: 1).coerceAtLeast(1)
-        PeriodicWorkRequestBuilder<MedicationReminderWorker>(hours.toLong(), TimeUnit.HOURS)
-            .setInputData(data)
-            .build()
-    }
-
-    workManager.enqueueUniquePeriodicWork(
-        "med_${item.id}",
-        ExistingPeriodicWorkPolicy.UPDATE,
-        request
-    )
-}
-
-private fun cancelMedication(context: android.content.Context, item: MedicationEntity) {
-    WorkManager.getInstance(context).cancelUniqueWork("med_${item.id}")
 }
 
 @Composable
@@ -482,13 +338,13 @@ private fun CareTopBar(onMenu: () -> Unit) {
 private fun MedicationRow(
     name: String,
     detail: String,
+    subDetail: String,
     badgeText: String,
     badgeColor: Color,
-    isOn: Boolean,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onToggle: (Boolean) -> Unit
+    onToggle: ((Boolean) -> Unit)? = null
 ) {
     Surface(
         shape = RoundedCornerShape(18.dp),
@@ -517,6 +373,10 @@ private fun MedicationRow(
                 Text(name, color = CareText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(2.dp))
                 Text(detail, color = CareMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                if (subDetail.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(subDetail, color = CareMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
 
             Card(
@@ -542,57 +402,210 @@ private fun MedicationRow(
             IconButton(onClick = onDelete) {
                 Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = CareError)
             }
+        }
+    }
+}
 
-            Switch(
-                checked = isOn,
-                onCheckedChange = onToggle,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = CareChip,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = CareChipAlt
+private data class ApiMedication(
+    val id: String,
+    val name: String,
+    val dosage: String,
+    val frequency: String,
+    val scheduledTimes: List<String>,
+    val startDate: String,
+    val endDate: String,
+    val notes: String,
+    val active: Boolean
+)
+
+private data class MedicationResult(val success: Boolean, val message: String)
+
+private fun fetchMedications(patientId: String): List<ApiMedication> {
+    if (patientId.isBlank()) return emptyList()
+    val url = URL("https://calendar-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients/$patientId/medications?active=true")
+    return try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("Content-Type", "application/json")
+            PatientSession.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+            connectTimeout = 10000
+            readTimeout = 10000
+        }
+        val code = conn.responseCode
+        val body = readStreamString(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+        if (code !in 200..299 || body.isBlank()) return emptyList()
+        val json = JSONObject(body)
+        val arr = json.optJSONArray("medications") ?: JSONArray()
+        val list = mutableListOf<ApiMedication>()
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val timesArr = item.optJSONArray("scheduledTimes") ?: JSONArray()
+            val times = mutableListOf<String>()
+            for (t in 0 until timesArr.length()) {
+                times.add(timesArr.optString(t))
+            }
+            list.add(
+                ApiMedication(
+                    id = item.optString("id"),
+                    name = item.optString("name"),
+                    dosage = item.optString("dosage"),
+                    frequency = item.optString("frequency"),
+                    scheduledTimes = times,
+                    startDate = item.optString("startDate"),
+                    endDate = item.optString("endDate"),
+                    notes = item.optString("notes"),
+                    active = item.optBoolean("active", true)
                 )
             )
         }
+        list
+    } catch (_: Exception) {
+        emptyList()
     }
+}
+
+private fun createMedication(patientId: String, medication: ApiMedication): MedicationResult {
+    if (patientId.isBlank()) return MedicationResult(false, "patientId vacío")
+    val url = URL("https://calendar-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients/$patientId/medications")
+    val payload = buildMedicationPayload(medication)
+    return sendMedicationRequest(url, "POST", payload)
+}
+
+private fun updateMedication(patientId: String, medication: ApiMedication): MedicationResult {
+    if (patientId.isBlank()) return MedicationResult(false, "patientId vacío")
+    if (medication.id.isBlank()) return MedicationResult(false, "medicationId vacío")
+    val url = URL("https://calendar-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients/$patientId/medications/${medication.id}")
+    val payload = buildMedicationPayload(medication)
+    return sendMedicationRequest(url, "PUT", payload)
+}
+
+private fun deleteMedication(patientId: String, medicationId: String): MedicationResult {
+    if (patientId.isBlank()) return MedicationResult(false, "patientId vacío")
+    if (medicationId.isBlank()) return MedicationResult(false, "medicationId vacío")
+    val url = URL("https://calendar-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients/$patientId/medications/$medicationId")
+    return sendMedicationRequest(url, "DELETE", null)
+}
+
+private fun sendMedicationRequest(url: URL, method: String, payload: String?): MedicationResult {
+    return try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            setRequestProperty("Content-Type", "application/json")
+            PatientSession.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+            connectTimeout = 10000
+            readTimeout = 10000
+            if (payload != null) {
+                doOutput = true
+                outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+            }
+        }
+        val code = conn.responseCode
+        val body = readStreamString(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+        if (code in 200..299) {
+            MedicationResult(true, "")
+        } else {
+            MedicationResult(false, body.ifBlank { "Error (HTTP $code)" })
+        }
+    } catch (e: Exception) {
+        MedicationResult(false, e.message ?: "Error de red")
+    }
+}
+
+private fun buildMedicationPayload(medication: ApiMedication): String {
+    val times = medication.scheduledTimes.joinToString(",") { "\"${escapeJson(it)}\"" }
+    return """{
+        "name":"${escapeJson(medication.name)}",
+        "dosage":"${escapeJson(medication.dosage)}",
+        "frequency":"${escapeJson(medication.frequency)}",
+        "scheduledTimes":[ $times ],
+        "startDate":"${escapeJson(medication.startDate)}",
+        "endDate":"${escapeJson(medication.endDate)}",
+        "notes":"${escapeJson(medication.notes)}"
+    }""".trimIndent()
+}
+
+private fun readStreamString(stream: java.io.InputStream?): String {
+    if (stream == null) return ""
+    return BufferedReader(InputStreamReader(stream)).use { it.readText() }
+}
+
+private fun escapeJson(value: String): String {
+    return value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddMedicationSheet(
     onDismiss: () -> Unit,
-    onSave: (MedicationEntity) -> Unit,
-    existing: MedicationEntity? = null
+    onSave: (ApiMedication) -> Unit,
+    existing: ApiMedication? = null
 ) {
     var name by remember(existing?.id) { mutableStateOf(existing?.name ?: "") }
-    var amount by remember(existing?.id) { mutableStateOf(existing?.amount ?: "") }
-    var hour by remember(existing?.id) { mutableStateOf("") }
-    var everyX by remember(existing?.id) { mutableStateOf(existing?.intervalHours?.toString() ?: "") }
-    var scheduleType by remember(existing?.id) {
-        mutableStateOf(
-            if (existing?.scheduleType == ScheduleType.EVERY_X.name) ScheduleType.EVERY_X
-            else ScheduleType.SPECIFIC
-        )
+    var dosage by remember(existing?.id) { mutableStateOf(existing?.dosage ?: "") }
+    var frequency by remember(existing?.id) { mutableStateOf(existing?.frequency ?: "TWICE_DAILY") }
+    val scheduledTimes = remember(existing?.id) {
+        androidx.compose.runtime.mutableStateListOf<String>().apply {
+            if (existing != null) {
+                addAll(existing.scheduledTimes)
+            }
+        }
     }
+    var startDate by remember(existing?.id) { mutableStateOf(existing?.startDate ?: "") }
+    var endDate by remember(existing?.id) { mutableStateOf(existing?.endDate ?: "") }
+    var notes by remember(existing?.id) { mutableStateOf(existing?.notes ?: "") }
     var error by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+    var frequencyExpanded by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
-    var medType by remember(existing?.id) { mutableStateOf(existing?.medType ?: "Pill") }
+    val timePickerState = androidx.compose.material3.rememberTimePickerState(
+        initialHour = 8,
+        initialMinute = 0,
+        is24Hour = true
+    )
+    val context = LocalContext.current
 
-    val timePickerState = rememberTimePickerState(
-        initialHour = existing?.hourOfDay ?: Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
-        initialMinute = existing?.minute ?: Calendar.getInstance().get(Calendar.MINUTE),
-        is24Hour = false
+    val frequencyOptions = listOf(
+        "ONCE_DAILY" to "1 vez al día",
+        "TWICE_DAILY" to "2 veces al día",
+        "THREE_TIMES_DAILY" to "3 veces al día",
+        "EVERY_8_HOURS" to "Cada 8 horas",
+        "EVERY_6_HOURS" to "Cada 6 horas",
+        "ONCE_WEEKLY" to "Una vez a la semana",
+        "AS_NEEDED" to "Según necesidad"
     )
 
-    fun formatTime(hourOfDay: Int, minute: Int): String {
-        val hour12 = if (hourOfDay % 12 == 0) 12 else hourOfDay % 12
-        val amPm = if (hourOfDay < 12) "AM" else "PM"
-        return String.format(Locale.US, "%d:%02d %s", hour12, minute, amPm)
+    fun frequencyLabelFor(value: String): String {
+        return frequencyOptions.firstOrNull { it.first == value }?.second ?: value
     }
 
-    if (existing != null && scheduleType == ScheduleType.SPECIFIC && hour.isBlank()) {
-        hour = formatTime(timePickerState.hour, timePickerState.minute)
+    fun openDatePicker(current: String, onSelected: (String) -> Unit) {
+        val cal = Calendar.getInstance()
+        val parts = current.split("-")
+        if (parts.size == 3) {
+            val y = parts[0].toIntOrNull()
+            val m = parts[1].toIntOrNull()
+            val d = parts[2].toIntOrNull()
+            if (y != null && m != null && d != null) {
+                cal.set(Calendar.YEAR, y)
+                cal.set(Calendar.MONTH, m - 1)
+                cal.set(Calendar.DAY_OF_MONTH, d)
+            }
+        }
+        DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                onSelected(String.format(Locale.US, "%04d-%02d-%02d", year, month + 1, dayOfMonth))
+            },
+            cal.get(Calendar.YEAR),
+            cal.get(Calendar.MONTH),
+            cal.get(Calendar.DAY_OF_MONTH)
+        ).show()
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -617,87 +630,117 @@ private fun AddMedicationSheet(
             )
 
             OutlinedTextField(
-                value = amount,
-                onValueChange = { amount = it; error = false },
-                label = { Text("Amount (e.g. 500mg)") },
+                value = dosage,
+                onValueChange = { dosage = it; error = false },
+                label = { Text("Dosage (e.g. 500mg)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = { scheduleType = ScheduleType.SPECIFIC },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (scheduleType == ScheduleType.SPECIFIC) CareChip else CareChipAlt
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text("Specific time", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-
-                Button(
-                    onClick = { scheduleType = ScheduleType.EVERY_X },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (scheduleType == ScheduleType.EVERY_X) CareChip else CareChipAlt
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text("Every X hours", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = { medType = "Pill" },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (medType == "Pill") CareChip else CareChipAlt
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text("Pill", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-                Button(
-                    onClick = { medType = "Injection" },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (medType == "Injection") CareChip else CareChipAlt
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text("Injection", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-                Button(
-                    onClick = { medType = "Other" },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (medType == "Other") CareChip else CareChipAlt
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text("Other", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-
-            if (scheduleType == ScheduleType.SPECIFIC) {
+            Box {
                 OutlinedTextField(
-                    value = if (hour.isBlank()) "Pick a time" else hour,
+                    value = frequencyLabelFor(frequency),
                     onValueChange = {},
-                    label = { Text("Time") },
-                    singleLine = true,
+                    label = { Text("Frecuencia") },
+                    readOnly = true,
                     modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        IconButton(onClick = { frequencyExpanded = true }) {
+                            Icon(
+                                imageVector = Icons.Filled.Menu,
+                                contentDescription = "Abrir opciones",
+                                tint = CareMuted
+                            )
+                        }
+                    }
+                )
+                DropdownMenu(
+                    expanded = frequencyExpanded,
+                    onDismissRequest = { frequencyExpanded = false }
+                ) {
+                    frequencyOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.second) },
+                            onClick = {
+                                frequency = option.first
+                                frequencyExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Horas programadas", color = CareText, fontWeight = FontWeight.SemiBold)
+                Button(
+                    onClick = { showTimePicker = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = CareChip),
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text("Agregar hora", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            if (scheduledTimes.isEmpty()) {
+                Text("Sin horarios aún", color = CareMuted, fontSize = 12.sp)
+            } else {
+                Text(
+                    scheduledTimes.joinToString(", "),
+                    color = CareMuted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = startDate,
+                    onValueChange = {},
+                    label = { Text("Start date (YYYY-MM-DD)") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
                     readOnly = true
                 )
-
-                TextButton(onClick = { showTimePicker = true }) {
-                    Text("Open time picker")
+                Button(
+                    onClick = { openDatePicker(startDate) { startDate = it; error = false } },
+                    colors = ButtonDefaults.buttonColors(containerColor = CareChipAlt),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text("📅", fontSize = 12.sp)
                 }
-            } else {
-                OutlinedTextField(
-                    value = everyX,
-                    onValueChange = { everyX = it; error = false },
-                    label = { Text("Every X hours (e.g. 8)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = endDate,
+                    onValueChange = {},
+                    label = { Text("End date (YYYY-MM-DD)") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    readOnly = true
+                )
+                Button(
+                    onClick = { openDatePicker(endDate) { endDate = it; error = false } },
+                    colors = ButtonDefaults.buttonColors(containerColor = CareChipAlt),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text("📅", fontSize = 12.sp)
+                }
+            }
+
+            OutlinedTextField(
+                value = notes,
+                onValueChange = { notes = it; error = false },
+                label = { Text("Notes") },
+                singleLine = false,
+                modifier = Modifier.fillMaxWidth()
+            )
 
             if (error) {
                 Text(errorMessage, color = CareError, fontWeight = FontWeight.SemiBold)
@@ -710,49 +753,36 @@ private fun AddMedicationSheet(
                 TextButton(onClick = onDismiss) { Text("Cancel") }
                 Button(
                     onClick = {
-                        if (name.isBlank() || amount.isBlank()) {
+                        if (name.isBlank() || dosage.isBlank()) {
                             error = true
                             errorMessage = "Please fill all fields"
                             return@Button
                         }
 
-                        if (scheduleType == ScheduleType.SPECIFIC && hour.isBlank()) {
+                        if (frequency.isBlank()) {
                             error = true
-                            errorMessage = "Please pick a time"
+                            errorMessage = "Please enter frequency"
                             return@Button
                         }
 
-                        if (scheduleType == ScheduleType.EVERY_X && everyX.isBlank()) {
+                        if (scheduledTimes.isEmpty()) {
                             error = true
-                            errorMessage = "Please enter the interval"
-                            return@Button
-                        }
-
-                        val interval = if (scheduleType == ScheduleType.EVERY_X) {
-                            everyX.trim().toIntOrNull()
-                        } else {
-                            null
-                        }
-                        if (scheduleType == ScheduleType.EVERY_X && (interval == null || interval <= 0)) {
-                            error = true
-                            errorMessage = "Interval must be a number"
+                            errorMessage = "Please enter at least one time"
                             return@Button
                         }
 
                         error = false
                         errorMessage = ""
-                        val item = MedicationEntity(
-                            id = existing?.id ?: UUID.randomUUID().toString(),
+                        val item = ApiMedication(
+                            id = existing?.id ?: "",
                             name = name.trim(),
-                            amount = amount.trim(),
-                            scheduleType = scheduleType.name,
-                            hourOfDay = if (scheduleType == ScheduleType.SPECIFIC) timePickerState.hour else null,
-                            minute = if (scheduleType == ScheduleType.SPECIFIC) timePickerState.minute else null,
-                            intervalHours = interval,
-                            status = existing?.status ?: "Due",
-                            enabled = existing?.enabled ?: true,
-                            medType = medType,
-                            createdAt = existing?.createdAt ?: System.currentTimeMillis()
+                            dosage = dosage.trim(),
+                            frequency = frequency.trim().uppercase(Locale.US),
+                            scheduledTimes = scheduledTimes.toList(),
+                            startDate = startDate.trim(),
+                            endDate = endDate.trim(),
+                            notes = notes.trim(),
+                            active = true
                         )
                         onSave(item)
                     },
@@ -767,7 +797,7 @@ private fun AddMedicationSheet(
     }
 
     if (showTimePicker) {
-        Dialog(onDismissRequest = { showTimePicker = false }) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { showTimePicker = false }) {
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = Color.White
@@ -776,23 +806,26 @@ private fun AddMedicationSheet(
                     modifier = Modifier.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("Select time", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    TimePicker(state = timePickerState)
+                    Text("Selecciona la hora", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    androidx.compose.material3.TimePicker(state = timePickerState)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        TextButton(onClick = { showTimePicker = false }) { Text("Cancel") }
+                        TextButton(onClick = { showTimePicker = false }) { Text("Cancelar") }
                         Button(
                             onClick = {
-                                hour = formatTime(timePickerState.hour, timePickerState.minute)
+                                val formatted = String.format(Locale.US, "%02d:%02d", timePickerState.hour, timePickerState.minute)
+                                if (!scheduledTimes.contains(formatted)) {
+                                    scheduledTimes.add(formatted)
+                                }
                                 error = false
                                 errorMessage = ""
                                 showTimePicker = false
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = CareChip)
                         ) {
-                            Text("Confirm")
+                            Text("Confirmar")
                         }
                     }
                 }
