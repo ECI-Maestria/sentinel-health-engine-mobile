@@ -122,6 +122,7 @@ private fun CareScreen(onBack: () -> Unit) {
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
     var feedbackSuccess by remember { mutableStateOf(true) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val canEdit = PatientSession.currentUser?.role?.equals("PATIENT", ignoreCase = true) != true
 
     var showSheet by remember { mutableStateOf(false) }
     var editingItem by remember { mutableStateOf<ApiMedication?>(null) }
@@ -186,16 +187,18 @@ private fun CareScreen(onBack: () -> Unit) {
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    Button(
-                        onClick = {
-                            editingItem = null
-                            showSheet = true
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = CareChip),
-                        shape = RoundedCornerShape(18.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Text("Add Medication", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    if (canEdit) {
+                        Button(
+                            onClick = {
+                                editingItem = null
+                                showSheet = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = CareChip),
+                            shape = RoundedCornerShape(18.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Text("Add Medication", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
                     }
                 }
             }
@@ -219,12 +222,15 @@ private fun CareScreen(onBack: () -> Unit) {
                     },
                     badgeText = if (item.active) "Activo" else "Inactivo",
                     badgeColor = if (item.active) CareChip else CareWarn,
-                    onClick = { editingItem = item; showSheet = true },
+                    canEdit = canEdit,
+                    onClick = { if (canEdit) { editingItem = item; showSheet = true } },
                     onEdit = {
-                        editingItem = item
-                        showSheet = true
+                        if (canEdit) {
+                            editingItem = item
+                            showSheet = true
+                        }
                     },
-                    onDelete = { deletingItem = item },
+                    onDelete = { if (canEdit) { deletingItem = item } },
                     onToggle = null
                 )
             }
@@ -341,6 +347,7 @@ private fun MedicationRow(
     subDetail: String,
     badgeText: String,
     badgeColor: Color,
+    canEdit: Boolean = true,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -395,12 +402,14 @@ private fun MedicationRow(
 
             Spacer(Modifier.size(10.dp))
 
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Outlined.Edit, contentDescription = "Edit", tint = CareNav)
-            }
+            if (canEdit) {
+                IconButton(onClick = onEdit) {
+                    Icon(Icons.Outlined.Edit, contentDescription = "Edit", tint = CareNav)
+                }
 
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = CareError)
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = CareError)
+                }
             }
         }
     }
