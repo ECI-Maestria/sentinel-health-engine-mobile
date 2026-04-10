@@ -3,23 +3,27 @@ package com.example.tesisv3
 import android.os.Build
 import android.os.Bundle
 import android.content.Intent
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,9 +32,7 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,16 +40,16 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -57,7 +59,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -74,20 +75,65 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import java.util.Calendar
+import java.util.Locale
 import javax.net.ssl.HttpsURLConnection
+import org.json.JSONArray
 import org.json.JSONObject
 
+// ── Data models ───────────────────────────────────────────────────────────────
+
+private data class DashVitals(
+    val heartRate: Int?,
+    val spO2: Int?,
+    val bpSystolic: Int?,
+    val bpDiastolic: Int?,
+    val timestampLabel: String = "Ahora"
+)
+
+private data class DashMedication(
+    val id: String,
+    val name: String,
+    val dosage: String,
+    val scheduledTime: String,
+    val active: Boolean,
+    val isDue: Boolean
+)
+
+private data class DashAppointment(
+    val id: String,
+    val title: String,
+    val scheduledAtMillis: Long,
+    val location: String,
+    val notes: String
+)
+
+private data class DashReminder(
+    val id: String,
+    val title: String,
+    val timeLabel: String,
+    val recurrenceLabel: String
+)
+
 class DashboardActivity : ComponentActivity(), MessageClient.OnMessageReceivedListener {
+
+    private val liveVitals = mutableStateOf<DashVitals?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
             enableEdgeToEdge()
         }
-
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
-                DashboardScreen(onBack = { finish() })
+                DashboardScreen(
+                    onBack = { finish() },
+                    liveVitals = liveVitals
+                )
             }
         }
     }
@@ -105,6 +151,23 @@ class DashboardActivity : ComponentActivity(), MessageClient.OnMessageReceivedLi
     override fun onMessageReceived(messageEvent: MessageEvent) {
         val payload = String(messageEvent.data, StandardCharsets.UTF_8)
         val path = messageEvent.path ?: ""
+
+        try {
+            val parsed = JSONObject(payload)
+            val hr = parsed.optInt("heartRate", parsed.optInt("hr", 0))
+            val spo2 = parsed.optInt("spO2", parsed.optInt("spo2", 0))
+            if (hr > 0 || spo2 > 0) {
+                val current = liveVitals.value
+                liveVitals.value = DashVitals(
+                    heartRate = if (hr > 0) hr else current?.heartRate,
+                    spO2 = if (spo2 > 0) spo2 else current?.spO2,
+                    bpSystolic = current?.bpSystolic,
+                    bpDiastolic = current?.bpDiastolic,
+                    timestampLabel = "Ahora"
+                )
+            }
+        } catch (_: Exception) {}
+
         lifecycleScope.launch(Dispatchers.IO) {
             val transport: IotTransport = when (IotSettings.getTransport(this@DashboardActivity)) {
                 TransportType.HTTP -> HttpTransport
@@ -117,86 +180,60 @@ class DashboardActivity : ComponentActivity(), MessageClient.OnMessageReceivedLi
     }
 }
 
-private fun buildWearablePayload(rawPayload: String, path: String, deviceUuid: String): String {
-    val now = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString()
-    val parsed = try {
-        JSONObject(rawPayload)
-    } catch (_: Exception) {
-        null
-    }
-    if (parsed != null) {
-        parsed.put("deviceId", deviceUuid)
-        if (!parsed.has("timestamp")) {
-            parsed.put("timestamp", now)
-        }
-        return parsed.toString()
-    }
-    val heartRate = parsed?.optInt("heartRate", parsed?.optInt("hr", 0) ?: 0) ?: 0
-    val spo2 = parsed?.optInt("spO2", parsed?.optInt("spo2", 0) ?: 0) ?: 0
-    return buildString {
-        append("""{ "deviceId": """").append("\"").append(escapeJson(deviceUuid)).append("\", ")
-        append(""""heartRate": """).append(heartRate).append(", ")
-        append(""""spO2": """).append(spo2).append(", ")
-        append(""""timestamp": """").append("\"").append(now).append("\"")
-        if (parsed == null) {
-            append(", \"rawPath\": \"").append(escapeJson(path)).append("\"")
-            append(", \"rawPayload\": \"").append(escapeJson(rawPayload)).append("\"")
-        }
-        append(" }")
-    }
-}
 
-private val DashboardBackground = Color(0xFFF4F5F0)
-private val DashboardCard = Color(0xFFDDEFE4)
-private val DashboardText = Color(0xFF33483A)
-private val DashboardMuted = Color(0xFF7B8D80)
-private val DashboardChip = Color(0xFF5BCB90)
-private val DashboardBlue = Color(0xFF6EA9E6)
-private val DashboardGreen = Color(0xFF62D3A2)
-private val DashboardBorder = Color(0xFFD8DDD4)
-private val DashboardNav = Color(0xFF58725E)
+private val DashBackground = Color(0xFFF4F5F0)
+private val DashGreen = Color(0xFF2D6A4F)
+private val DashGreenLight = Color(0xFF5BCB90)
+private val DashGreenChip = Color(0xFFDDEFE4)
+private val DashText = Color(0xFF1A2E25)
+private val DashMuted = Color(0xFF7B8D80)
+private val DashCard = Color.White
+private val DashNav = Color(0xFF58725E)
+private val DashDue = Color(0xFFE07B3A)
+private val DashDueBg = Color(0xFFFFF0E0)
+private val DashDivider = Color(0xFFEEF0EC)
+
 
 @Composable
-private fun DashboardScreen(onBack: () -> Unit) {
-    var selectedNav by remember { mutableIntStateOf(0) }
+private fun DashboardScreen(onBack: () -> Unit, liveVitals: MutableState<DashVitals?>) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var isSyncing by remember { mutableStateOf(false) }
-    var syncDetails by remember { mutableStateOf<String?>(null) }
-    var showSyncDialog by remember { mutableStateOf(false) }
-    var transportType by remember { mutableStateOf(IotSettings.getTransport(context)) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    var tlsDetails by remember { mutableStateOf<String?>(null) }
-    var showTlsDialog by remember { mutableStateOf(false) }
-    var mqttDetails by remember { mutableStateOf<String?>(null) }
-    var showMqttDialog by remember { mutableStateOf(false) }
-    var showChangePassword by remember { mutableStateOf(false) }
+
+    var vitals by liveVitals
+    var medications by remember { mutableStateOf<List<DashMedication>>(emptyList()) }
+    var appointments by remember { mutableStateOf<List<DashAppointment>>(emptyList()) }
+    var reminders by remember { mutableStateOf<List<DashReminder>>(emptyList()) }
     var wearableConnected by remember { mutableStateOf<Boolean?>(null) }
-    var registerDetails by remember { mutableStateOf<String?>(null) }
-    var showRegisterDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        wearableConnected = withContext(Dispatchers.IO) {
-            isWearableConnected(context)
-        }
+        wearableConnected = withContext(Dispatchers.IO) { isWearableConnected(context) }
     }
 
     LaunchedEffect(Unit) {
-        if (IotSettings.isDeviceRegisterModalEnabled(context)) {
-            val result = withContext(Dispatchers.IO) {
-                DeviceRegistrationManager.consumeLastResult(context)
-            }
-            if (result != null) {
-                registerDetails = buildString {
-                    append("Success: ${result.success}\n")
-                    append("HTTP: ${result.code ?: "N/A"}\n")
-                    append("Body: ${result.body ?: "N/A"}\n")
-                    append("Error: ${result.error ?: "N/A"}")
-                }
-                showRegisterDialog = true
-            }
+        val patientId = PatientSession.patientId
+        val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+
+        // Vitals: wearable data takes priority; fallback to API if no live data
+        if (vitals == null) {
+            val apiVitals = withContext(Dispatchers.IO) { fetchApiVitals(patientId) }
+            if (vitals == null) vitals = apiVitals
         }
+
+        medications = withContext(Dispatchers.IO) { fetchDashMedications(patientId) }
+        appointments = withContext(Dispatchers.IO) { fetchDashAppointments(patientId, today) }
+        reminders = withContext(Dispatchers.IO) { fetchDashReminders(patientId, today) }
     }
+
+    val firstName = PatientSession.currentUser?.firstName
+        ?: PatientSession.currentUser?.fullName?.split(" ")?.firstOrNull()
+        ?: "Paciente"
+    val lastName = PatientSession.currentUser?.lastName
+        ?: PatientSession.currentUser?.fullName?.split(" ")?.getOrNull(1)
+        ?: ""
+    val displayName = if (lastName.isNotBlank()) "$firstName $lastName" else firstName
+    val initials = "${firstName.firstOrNull() ?: ""}${lastName.firstOrNull() ?: ""}"
+        .uppercase().ifBlank { "P" }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -214,337 +251,101 @@ private fun DashboardScreen(onBack: () -> Unit) {
         }
     ) {
         Scaffold(
-            containerColor = DashboardBackground,
+            containerColor = DashBackground,
             bottomBar = {
                 AppBottomNav(
                     current = BottomNavDestination.DASHBOARD,
                     modifier = Modifier.navigationBarsPadding(),
-                    indicatorColor = DashboardCard,
-                    selectedColor = DashboardNav,
-                    unselectedColor = DashboardNav.copy(alpha = 0.55f)
+                    indicatorColor = DashGreenChip,
+                    selectedColor = DashNav,
+                    unselectedColor = DashNav.copy(alpha = 0.55f)
                 )
             }
         ) { innerPadding ->
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(DashboardBackground),
+                    .background(DashBackground),
                 contentPadding = PaddingValues(
                     start = 18.dp,
-                    top = innerPadding.calculateTopPadding() + 12.dp,
+                    top = innerPadding.calculateTopPadding() + 8.dp,
                     end = 18.dp,
                     bottom = innerPadding.calculateBottomPadding() + 20.dp
                 ),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 item {
-                    DashboardTopBar(
-                        onMenu = { scope.launch { drawerState.open() } },
-                        wearableConnected = wearableConnected
+                    DashTopBar(
+                        displayName = displayName,
+                        initials = initials,
+                        wearableConnected = wearableConnected,
+                        onMenu = { scope.launch { drawerState.open() } }
                     )
                 }
-
+                item { VitalsCard(vitals = vitals) }
                 item {
-                    Surface(
-                        shape = RoundedCornerShape(22.dp),
-                        color = Color.White,
-                        tonalElevation = 0.dp,
-                        shadowElevation = 0.dp
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text("Sync", color = DashboardText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                Text(
-                                    text = "Send data to IoT Hub (${transportType.name})",
-                                    color = DashboardMuted,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                TextButton(
-                                    onClick = {
-                                        context.startActivity(Intent(context, SettingsActivity::class.java))
-                                        transportType = IotSettings.getTransport(context)
-                                    }
-                                ) {
-                                    Text("Settings")
-                                }
-                                Button(
-                                    onClick = {
-                                        if (isSyncing) return@Button
-                                        isSyncing = true
-                                        scope.launch(Dispatchers.IO) {
-                                    val transport: IotTransport = when (IotSettings.getTransport(context)) {
-                                        TransportType.HTTP -> HttpTransport
-                                        TransportType.MQTT, TransportType.MQTT_WS -> MqttTransport
-                                    }
-                                            val transportType = IotSettings.getTransport(context)
-                                            val payload = buildString {
-                                                append("""{ "deviceId": "mobile-gateway-01", "heartRate": 145, "spO2": 88, "timestamp": """")
-                                                append(Instant.now().truncatedTo(ChronoUnit.SECONDS).toString())
-                                                append("""" }""")
-                                            }
-                                            val result = transport.sendSyncMessage(
-                                                BuildConfig.AZURE_IOT_CONNECTION_STRING,
-                                                payload
-                                            )
-                                            withContext(Dispatchers.Main) {
-                                                isSyncing = false
-                                        val details = buildString {
-                                            append("Success: ${result.success}\n")
-                                            append("HTTP: ${result.code ?: "N/A"}\n")
-                                            append("Body: ${result.body ?: "N/A"}\n")
-                                            append("Error: ${result.error ?: "N/A"}")
-                                            if (IotSettings.isDiagnosticEnabled(context) &&
-                                                IotSettings.getTransport(context) != TransportType.HTTP
-                                            ) {
-                                                val diag = MqttTransport.getLastDiagnostic()
-                                                if (!diag.isNullOrBlank()) {
-                                                    append("\nMQTT: ").append(diag)
-                                                }
-                                            }
-                                        }
-                                                syncDetails = details
-                                                showSyncDialog = true
-                                                if (result.success) {
-                                                    Toast.makeText(context, "Sync sent", Toast.LENGTH_SHORT).show()
-                                                } else {
-                                                    Toast.makeText(
-                                                        context,
-                                                        "Sync failed: ${result.error ?: "Unknown error"}",
-                                                        Toast.LENGTH_LONG
-                                                    ).show()
-                                                }
-                                            }
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = DashboardChip),
-                                    shape = RoundedCornerShape(16.dp),
-                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                                ) {
-                                    Text(if (isSyncing) "Sending..." else "Sync", fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
+                    MedicationsSection(
+                        medications = medications.take(3),
+                        onSeeAll = { context.startActivity(Intent(context, CareActivity::class.java)) }
+                    )
                 }
-
                 item {
-                    Surface(
-                        shape = RoundedCornerShape(22.dp),
-                        color = Color.White,
-                        tonalElevation = 0.dp,
-                        shadowElevation = 0.dp
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text("TLS Check", color = DashboardText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                Text(
-                                    text = "Verify TLS to azure-devices.net",
-                                    color = DashboardMuted,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                            Button(
-                                onClick = {
-                                    scope.launch(Dispatchers.IO) {
-                                        val result = runTlsCheck()
-                                        withContext(Dispatchers.Main) {
-                                            tlsDetails = result
-                                            showTlsDialog = true
-                                        }
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = DashboardChip),
-                                shape = RoundedCornerShape(16.dp),
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                            ) {
-                                Text("Check", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
+                    AppointmentsSection(
+                        appointments = appointments.take(2),
+                        onSeeAll = { context.startActivity(Intent(context, CalendarActivity::class.java)) }
+                    )
                 }
-
                 item {
-                    Surface(
-                        shape = RoundedCornerShape(22.dp),
-                        color = Color.White,
-                        tonalElevation = 0.dp,
-                        shadowElevation = 0.dp
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text("MQTT Check", color = DashboardText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                Text(
-                                    text = "Test MQTT connection only",
-                                    color = DashboardMuted,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                            Button(
-                                onClick = {
-                                    scope.launch(Dispatchers.IO) {
-                                        val result = MqttTransport.testConnection(
-                                            BuildConfig.AZURE_IOT_CONNECTION_STRING,
-                                            IotSettings.getTransport(context)
-                                        )
-                                        withContext(Dispatchers.Main) {
-                                            mqttDetails = result
-                                            showMqttDialog = true
-                                        }
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = DashboardChip),
-                                shape = RoundedCornerShape(16.dp),
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                            ) {
-                                Text("Check", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        MetricCard(
-                            modifier = Modifier.weight(1f),
-                            title = "Steps Today",
-                            value = "8,942",
-                            detail = "Goal 10,000"
-                        )
-                        MetricCard(
-                            modifier = Modifier.weight(1f),
-                            title = "Sleep",
-                            value = "7h 15m",
-                            detail = "Quality Good"
-                        )
-                    }
-                }
-
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        MetricCard(
-                            modifier = Modifier.weight(1f),
-                            title = "Heart Rate",
-                            value = "72 bpm",
-                            detail = "Resting"
-                        )
-                        MetricCard(
-                            modifier = Modifier.weight(1f),
-                            title = "Glucose",
-                            value = "2405",
-                            detail = "+33 % vs last month"
-                        )
-                    }
-                }
-
-                item {
-                    OverviewCard()
+                    RemindersSection(
+                        reminders = reminders.take(3),
+                        onSeeAll = { context.startActivity(Intent(context, CalendarActivity::class.java)) }
+                    )
                 }
             }
         }
-    }
-
-    if (showSyncDialog && syncDetails != null) {
-        AlertDialog(
-            onDismissRequest = { showSyncDialog = false },
-            title = { Text("Sync result") },
-            text = { Text(syncDetails ?: "") },
-            confirmButton = {
-                Button(onClick = { showSyncDialog = false }) { Text("OK") }
-            }
-        )
-    }
-
-    if (showTlsDialog && tlsDetails != null) {
-        AlertDialog(
-            onDismissRequest = { showTlsDialog = false },
-            title = { Text("TLS check") },
-            text = { Text(tlsDetails ?: "") },
-            confirmButton = {
-                Button(onClick = { showTlsDialog = false }) { Text("OK") }
-            }
-        )
-    }
-
-    if (showMqttDialog && mqttDetails != null) {
-        AlertDialog(
-            onDismissRequest = { showMqttDialog = false },
-            title = { Text("MQTT check") },
-            text = { Text(mqttDetails ?: "") },
-            confirmButton = {
-                Button(onClick = { showMqttDialog = false }) { Text("OK") }
-            }
-        )
-    }
-
-    if (showRegisterDialog && registerDetails != null) {
-        AlertDialog(
-            onDismissRequest = { showRegisterDialog = false },
-            title = { Text("Device registration") },
-            text = { Text(registerDetails ?: "") },
-            confirmButton = {
-                Button(onClick = { showRegisterDialog = false }) { Text("OK") }
-            }
-        )
-    }
-
-    if (showChangePassword) {
-        ChangePasswordDialog(onDismiss = { showChangePassword = false })
     }
 }
 
+
 @Composable
-private fun DashboardTopBar(onMenu: () -> Unit, wearableConnected: Boolean?) {
+private fun DashTopBar(
+    displayName: String,
+    initials: String,
+    wearableConnected: Boolean?,
+    onMenu: () -> Unit
+) {
     val context = LocalContext.current
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onMenu) {
-            Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = DashboardNav)
+            Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = DashNav)
         }
-
-        Box(
+        Column(
             modifier = Modifier
-                .size(54.dp)
-                .clip(CircleShape)
-                .background(Color.White),
-            contentAlignment = Alignment.Center
+                .weight(1f)
+                .padding(start = 4.dp)
         ) {
-            Text(text = "+", color = DashboardText, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            Text(text = "Hola,", color = DashMuted, fontSize = 14.sp)
+            Text(
+                text = "$displayName 👋",
+                color = DashText,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
-
         IconButton(onClick = {
             context.startActivity(Intent(context, NotificationsActivity::class.java))
         }) {
             Box {
-                Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = DashboardNav)
+                Icon(
+                    Icons.Outlined.NotificationsNone,
+                    contentDescription = "Notificaciones",
+                    tint = DashNav
+                )
                 val dotColor = when (wearableConnected) {
                     true -> Color(0xFF4CAF50)
                     false -> Color(0xFFD64545)
@@ -559,6 +360,616 @@ private fun DashboardTopBar(onMenu: () -> Unit, wearableConnected: Boolean?) {
                 )
             }
         }
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(CircleShape)
+                .background(DashGreenLight),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = initials,
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+private fun VitalsCard(vitals: DashVitals?) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = DashGreen)
+    ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Signos Vitales — Ahora",
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = vitals?.timestampLabel ?: "—",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 12.sp
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                VitalItem(
+                    modifier = Modifier.weight(1f),
+                    label = "❤️ FC",
+                    value = vitals?.heartRate?.toString() ?: "—",
+                    unit = "bpm",
+                    highlight = false
+                )
+                val bpHigh = (vitals?.bpSystolic ?: 0) > 140
+                VitalItem(
+                    modifier = Modifier.weight(1f),
+                    label = "📌 PA",
+                    value = vitals?.bpSystolic?.toString() ?: "—",
+                    unit = vitals?.bpDiastolic?.let { "/$it" } ?: "",
+                    highlight = bpHigh
+                )
+                VitalItem(
+                    modifier = Modifier.weight(1f),
+                    label = "🔥 O2",
+                    value = vitals?.spO2?.toString() ?: "—",
+                    unit = "%",
+                    highlight = false
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VitalItem(
+    modifier: Modifier = Modifier,
+    label: String,
+    value: String,
+    unit: String,
+    highlight: Boolean
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .clip(shape)
+            .background(Color.White.copy(alpha = 0.18f))
+            .then(
+                if (highlight) Modifier.border(1.5.dp, Color(0xFFE05A5A), shape)
+                else Modifier
+            )
+            .padding(12.dp)
+    ) {
+        Text(text = label, color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = value,
+            color = Color.White,
+            fontSize = 26.sp,
+            fontWeight = FontWeight.Bold
+        )
+        if (unit.isNotBlank()) {
+            Text(text = unit, color = Color.White.copy(alpha = 0.75f), fontSize = 11.sp)
+        }
+    }
+}
+
+
+@Composable
+private fun SectionHeader(title: String, actionLabel: String, onAction: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(text = title, color = DashText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Text(
+            text = actionLabel,
+            color = DashGreenLight,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.clickable(onClick = onAction)
+        )
+    }
+}
+
+@Composable
+private fun EmptyStateCard(message: String) {
+    Surface(shape = RoundedCornerShape(14.dp), color = DashCard) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(message, color = DashMuted, fontSize = 14.sp)
+        }
+    }
+}
+
+@Composable
+private fun MedicationsSection(medications: List<DashMedication>, onSeeAll: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionHeader("💊 Medicamentos de Hoy", "Ver todos", onSeeAll)
+        if (medications.isEmpty()) {
+            EmptyStateCard("Sin medicamentos para hoy")
+        } else {
+            Surface(shape = RoundedCornerShape(16.dp), color = DashCard) {
+                Column {
+                    medications.forEachIndexed { idx, med ->
+                        MedicationRow(med)
+                        if (idx < medications.lastIndex) {
+                            HorizontalDivider(color = DashDivider, thickness = 1.dp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MedicationRow(med: DashMedication) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(DashGreenChip),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("💊", fontSize = 18.sp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                med.name,
+                color = DashText,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            val subtitle = buildString {
+                if (med.dosage.isNotBlank()) append(med.dosage)
+                if (med.scheduledTime.isNotBlank()) {
+                    if (length > 0) append(" · ")
+                    append(med.scheduledTime)
+                }
+            }
+            if (subtitle.isNotBlank()) {
+                Text(subtitle, color = DashMuted, fontSize = 13.sp)
+            }
+        }
+        if (med.isDue) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(DashDueBg)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text("Due", color = DashDue, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        } else {
+            Switch(
+                checked = med.active,
+                onCheckedChange = null,
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = DashGreenLight,
+                    uncheckedTrackColor = Color(0xFFCCCCCC)
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppointmentsSection(appointments: List<DashAppointment>, onSeeAll: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionHeader("📅 Próximas Citas", "ver todos", onSeeAll)
+        if (appointments.isEmpty()) {
+            EmptyStateCard("Sin citas para hoy")
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                appointments.forEach { appointment ->
+                    AppointmentCard(appointment)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppointmentCard(appointment: DashAppointment) {
+    val timeLabel = formatAppointmentTimeLabel(appointment.scheduledAtMillis)
+    Surface(shape = RoundedCornerShape(14.dp), color = DashCard) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min)
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp))
+                    .background(DashGreenLight)
+            )
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                Text(
+                    text = timeLabel,
+                    color = DashMuted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.5.sp
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = appointment.title,
+                    color = DashText,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                val subtitle = listOfNotNull(
+                    appointment.notes.ifBlank { null },
+                    appointment.location.ifBlank { null }
+                ).joinToString(" · ")
+                if (subtitle.isNotBlank()) {
+                    Text(subtitle, color = DashMuted, fontSize = 13.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemindersSection(reminders: List<DashReminder>, onSeeAll: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionHeader("🔔 Recordatorios", "Ver todos", onSeeAll)
+        if (reminders.isEmpty()) {
+            EmptyStateCard("Sin recordatorios para hoy")
+        } else {
+            Surface(shape = RoundedCornerShape(16.dp), color = DashCard) {
+                Column {
+                    reminders.forEachIndexed { idx, reminder ->
+                        ReminderRow(reminder)
+                        if (idx < reminders.lastIndex) {
+                            HorizontalDivider(color = DashDivider, thickness = 1.dp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReminderRow(reminder: DashReminder) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Text(
+            reminder.title,
+            color = DashText,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        val subtitle = buildString {
+            append(reminder.timeLabel)
+            if (reminder.recurrenceLabel.isNotBlank()) {
+                append(" · ")
+                append(reminder.recurrenceLabel)
+            }
+        }
+        Text(subtitle, color = DashMuted, fontSize = 13.sp)
+    }
+}
+
+// ── API functions ─────────────────────────────────────────────────────────────
+
+private fun fetchApiVitals(patientId: String): DashVitals? {
+    if (patientId.isBlank()) return null
+    val url = URL(
+        "https://analytics-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io" +
+                "/v1/patients/$patientId/vitals/latest"
+    )
+    return try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("Content-Type", "application/json")
+            PatientSession.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+            connectTimeout = 10000
+            readTimeout = 10000
+        }
+        val code = conn.responseCode
+        val body = readDashStream(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+        if (code !in 200..299 || body.isBlank()) return null
+        val json = JSONObject(body)
+        val hr = json.optInt("heartRate").takeIf { it > 0 }
+            ?: json.optInt("hr").takeIf { it > 0 }
+        val spo2 = json.optInt("oxygenSaturation").takeIf { it > 0 }
+            ?: json.optInt("spO2").takeIf { it > 0 }
+            ?: json.optInt("spo2").takeIf { it > 0 }
+        val bpSys = json.optInt("bloodPressureSystolic").takeIf { it > 0 }
+            ?: json.optInt("systolic").takeIf { it > 0 }
+        val bpDia = json.optInt("bloodPressureDiastolic").takeIf { it > 0 }
+            ?: json.optInt("diastolic").takeIf { it > 0 }
+        val tsRaw = json.optString("measuredAt").ifBlank { json.optString("timestamp") }
+        DashVitals(
+            heartRate = hr,
+            spO2 = spo2,
+            bpSystolic = bpSys,
+            bpDiastolic = bpDia,
+            timestampLabel = formatVitalsTimestamp(tsRaw)
+        )
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun fetchDashMedications(patientId: String): List<DashMedication> {
+    if (patientId.isBlank()) return emptyList()
+    val url = URL(
+        "https://calendar-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io" +
+                "/v1/patients/$patientId/medications?active=true"
+    )
+    return try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("Content-Type", "application/json")
+            PatientSession.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+            connectTimeout = 10000
+            readTimeout = 10000
+        }
+        val code = conn.responseCode
+        val body = readDashStream(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+        if (code !in 200..299 || body.isBlank()) return emptyList()
+        val json = JSONObject(body)
+        val arr = json.optJSONArray("medications") ?: JSONArray()
+        val today = LocalDate.now()
+        val list = mutableListOf<DashMedication>()
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val startDate = item.optString("startDate")
+            val endDate = item.optString("endDate")
+            if (!isMedForToday(startDate, endDate, today)) continue
+            val timesArr = item.optJSONArray("scheduledTimes") ?: JSONArray()
+            val firstTime = if (timesArr.length() > 0) timesArr.optString(0) else ""
+            list.add(
+                DashMedication(
+                    id = item.optString("id"),
+                    name = item.optString("name"),
+                    dosage = item.optString("dosage"),
+                    scheduledTime = formatMedTime(firstTime),
+                    active = item.optBoolean("active", true),
+                    isDue = firstTime.isNotBlank() && isTimeDue(firstTime)
+                )
+            )
+        }
+        list
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+private fun fetchDashAppointments(patientId: String, date: String): List<DashAppointment> {
+    if (patientId.isBlank()) return emptyList()
+    val url = URL(
+        "https://calendar-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io" +
+                "/v1/patients/$patientId/appointments?period=day&date=$date"
+    )
+    return try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("Content-Type", "application/json")
+            PatientSession.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+            connectTimeout = 10000
+            readTimeout = 10000
+        }
+        val code = conn.responseCode
+        val body = readDashStream(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+        if (code !in 200..299 || body.isBlank()) return emptyList()
+        val json = JSONObject(body)
+        val arr = json.optJSONArray("appointments") ?: return emptyList()
+        val list = mutableListOf<DashAppointment>()
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val scheduledAt = item.optString("scheduledAt")
+            val millis = try { Instant.parse(scheduledAt).toEpochMilli() } catch (_: Exception) { 0L }
+            list.add(
+                DashAppointment(
+                    id = item.optString("id"),
+                    title = item.optString("title"),
+                    scheduledAtMillis = millis,
+                    location = item.optString("location"),
+                    notes = item.optString("notes")
+                )
+            )
+        }
+        list.sortedBy { it.scheduledAtMillis }
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+private fun fetchDashReminders(patientId: String, date: String): List<DashReminder> {
+    if (patientId.isBlank()) return emptyList()
+    val url = URL(
+        "https://calendar-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io" +
+                "/v1/patients/$patientId/reminders?period=day&date=$date"
+    )
+    return try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("Content-Type", "application/json")
+            PatientSession.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+            connectTimeout = 10000
+            readTimeout = 10000
+        }
+        val code = conn.responseCode
+        val body = readDashStream(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+        if (code !in 200..299 || body.isBlank()) return emptyList()
+        val json = JSONObject(body)
+        val arr = json.optJSONArray("reminders") ?: return emptyList()
+        val list = mutableListOf<DashReminder>()
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val scheduledAt = item.optString("scheduledAt").ifBlank { item.optString("time") }
+            val recurrence = item.optString("recurrence").ifBlank { item.optString("frequency") }
+            list.add(
+                DashReminder(
+                    id = item.optString("id"),
+                    title = item.optString("title"),
+                    timeLabel = buildReminderTimeLabel(scheduledAt),
+                    recurrenceLabel = formatRecurrence(recurrence)
+                )
+            )
+        }
+        list
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+private fun readDashStream(stream: java.io.InputStream?): String {
+    if (stream == null) return ""
+    return BufferedReader(InputStreamReader(stream)).use { it.readText() }
+}
+
+private fun isMedForToday(startDate: String, endDate: String, today: LocalDate): Boolean {
+    return try {
+        val start = LocalDate.parse(startDate.take(10))
+        val end = if (endDate.isBlank() || endDate == "null") null
+        else LocalDate.parse(endDate.take(10))
+        !today.isBefore(start) && (end == null || !today.isAfter(end))
+    } catch (_: Exception) {
+        true
+    }
+}
+
+private fun isTimeDue(timeStr: String): Boolean {
+    if (timeStr.isBlank()) return false
+    return try {
+        val cal = Calendar.getInstance()
+        val currentHour = cal.get(Calendar.HOUR_OF_DAY)
+        val currentMinute = cal.get(Calendar.MINUTE)
+        if (timeStr.contains("T")) {
+            val localTime = Instant.parse(timeStr).atZone(ZoneId.systemDefault()).toLocalTime()
+            return localTime.hour < currentHour ||
+                    (localTime.hour == currentHour && localTime.minute <= currentMinute)
+        }
+        val parts = timeStr.trim().split(":")
+        val hour = parts[0].toInt()
+        val minute = parts.getOrElse(1) { "0" }.toInt()
+        hour < currentHour || (hour == currentHour && minute <= currentMinute)
+    } catch (_: Exception) {
+        false
+    }
+}
+
+private fun formatMedTime(timeStr: String): String {
+    if (timeStr.isBlank()) return ""
+    return try {
+        if (timeStr.contains("T")) {
+            val localTime = Instant.parse(timeStr).atZone(ZoneId.systemDefault()).toLocalTime()
+            val h12 = if (localTime.hour % 12 == 0) 12 else localTime.hour % 12
+            val amPm = if (localTime.hour < 12) "AM" else "PM"
+            return String.format(Locale.US, "%d:%02d %s", h12, localTime.minute, amPm)
+        }
+        val parts = timeStr.trim().split(":")
+        val hour = parts[0].toInt()
+        val minute = parts.getOrElse(1) { "0" }.toInt()
+        val h12 = if (hour % 12 == 0) 12 else hour % 12
+        val amPm = if (hour < 12) "AM" else "PM"
+        String.format(Locale.US, "%d:%02d %s", h12, minute, amPm)
+    } catch (_: Exception) {
+        timeStr
+    }
+}
+
+private fun buildReminderTimeLabel(scheduledAt: String): String {
+    if (scheduledAt.isBlank()) return "Hoy"
+    return try {
+        val localTime = Instant.parse(scheduledAt).atZone(ZoneId.systemDefault()).toLocalTime()
+        val h12 = if (localTime.hour % 12 == 0) 12 else localTime.hour % 12
+        val amPm = if (localTime.hour < 12) "AM" else "PM"
+        "Hoy · ${String.format(Locale.US, "%d:%02d %s", h12, localTime.minute, amPm)}"
+    } catch (_: Exception) {
+        try {
+            "Hoy · ${formatMedTime(scheduledAt)}"
+        } catch (_: Exception) {
+            "Hoy"
+        }
+    }
+}
+
+private fun formatRecurrence(recurrence: String): String {
+    return when (recurrence.uppercase(Locale.US)) {
+        "DAILY" -> "Diario"
+        "WEEKLY" -> "Semanal"
+        "MONTHLY" -> "Mensual"
+        "ONCE" -> "Una vez"
+        "AS_NEEDED" -> "Según necesidad"
+        else -> recurrence.replace("_", " ")
+            .lowercase(Locale.US)
+            .replaceFirstChar { it.uppercase() }
+    }
+}
+
+private fun formatAppointmentTimeLabel(millis: Long): String {
+    if (millis == 0L) return "PENDIENTE"
+    val today = LocalDate.now(ZoneId.systemDefault())
+    val zdt = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault())
+    val appointmentDate = zdt.toLocalDate()
+    val localTime = zdt.toLocalTime()
+    val h12 = if (localTime.hour % 12 == 0) 12 else localTime.hour % 12
+    val amPm = if (localTime.hour < 12) "AM" else "PM"
+    val timeStr = String.format(Locale.US, "%d:%02d %s", h12, localTime.minute, amPm)
+    return when (appointmentDate) {
+        today -> "HOY · $timeStr"
+        today.plusDays(1) -> "MAÑANA · $timeStr"
+        else -> {
+            val fmt = DateTimeFormatter.ofPattern("d MMM", Locale("es"))
+            "${appointmentDate.format(fmt).uppercase()} · $timeStr"
+        }
+    }
+}
+
+private fun formatVitalsTimestamp(isoString: String): String {
+    if (isoString.isBlank()) return "—"
+    return try {
+        val instant = Instant.parse(isoString)
+        val minutesAgo = ChronoUnit.MINUTES.between(instant, Instant.now())
+        when {
+            minutesAgo < 1 -> "Ahora"
+            minutesAgo < 60 -> "hace $minutesAgo min"
+            else -> "hace ${minutesAgo / 60}h"
+        }
+    } catch (_: Exception) {
+        "—"
     }
 }
 
@@ -571,283 +982,29 @@ private fun isWearableConnected(context: android.content.Context): Boolean {
     }
 }
 
-@Composable
-private fun MetricCard(modifier: Modifier = Modifier, title: String, value: String, detail: String) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = DashboardCard),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Text(title, color = DashboardText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
-            Text(value, color = DashboardText, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
-            Spacer(Modifier.height(8.dp))
-            Text(detail, color = DashboardMuted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-        }
+private fun buildWearablePayload(rawPayload: String, path: String, deviceUuid: String): String {
+    val now = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString()
+    val parsed = try { JSONObject(rawPayload) } catch (_: Exception) { null }
+    if (parsed != null) {
+        parsed.put("deviceId", deviceUuid)
+        if (!parsed.has("timestamp")) parsed.put("timestamp", now)
+        return parsed.toString()
+    }
+    return buildString {
+        append("""{ "deviceId": """")
+        append(escapeJson(deviceUuid))
+        append("""", "timestamp": """")
+        append(now)
+        append("""", "rawPath": """")
+        append(escapeJson(path))
+        append("""", "rawPayload": """")
+        append(escapeJson(rawPayload))
+        append("""" }""")
     }
 }
 
-@Composable
-private fun OverviewCard() {
-    Surface(
-        shape = RoundedCornerShape(28.dp),
-        color = Color.White,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, DashboardBorder)
-    ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Activity Overview",
-                    color = DashboardText,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                FilterChip("Day", true)
-                Spacer(Modifier.size(14.dp))
-                Text("Week", color = DashboardText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.size(14.dp))
-                Text("Month", color = DashboardText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            }
-
-            Spacer(Modifier.height(18.dp))
-            Text("Weekly balance", color = DashboardText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(16.dp))
-            ChartPlaceholder()
-            Spacer(Modifier.height(14.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                LegendDot(DashboardGreen)
-                Spacer(Modifier.size(8.dp))
-                Text("Steps", color = DashboardMuted, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.size(22.dp))
-                LegendDot(DashboardBlue)
-                Spacer(Modifier.size(8.dp))
-                Text("Calories", color = DashboardMuted, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
-
-@Composable
-private fun FilterChip(label: String, selected: Boolean) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (selected) DashboardChip else Color.Transparent)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = label,
-            color = if (selected) Color.White else DashboardText,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-@Composable
-private fun ChartPlaceholder() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .background(Color.White)
-            .padding(16.dp)
-    ) {
-        repeat(4) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(DashboardBorder)
-            )
-            Spacer(Modifier.height(34.dp))
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(160.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.Bottom
-        ) {
-            ChartBar(0.38f, DashboardGreen, Modifier.weight(1f))
-            ChartBar(0.48f, DashboardGreen, Modifier.weight(1f))
-            ChartBar(0.58f, DashboardGreen, Modifier.weight(1f))
-            ChartBar(0.68f, DashboardBlue, Modifier.weight(1f))
-            ChartBar(0.82f, DashboardBlue, Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-private fun ChartBar(progress: Float, color: Color, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.height(160.dp),
-        contentAlignment = Alignment.BottomCenter
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height((160 * progress).dp)
-                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                .background(color.copy(alpha = 0.5f))
-        )
-    }
-}
-
-@Composable
-private fun LegendDot(color: Color) {
-    Box(
-        modifier = Modifier
-            .size(12.dp)
-            .clip(CircleShape)
-            .background(color)
-    )
-}
-
-private fun runTlsCheck(): String {
-    return try {
-        val host = BuildConfig.AZURE_IOT_HOST_NAME.ifBlank { "azure-devices.net" }
-        val url = URL("https://$host")
-        val conn = (url.openConnection() as HttpsURLConnection).apply {
-            connectTimeout = 8000
-            readTimeout = 8000
-            requestMethod = "GET"
-        }
-        conn.connect()
-        val code = conn.responseCode
-        val cipher = conn.cipherSuite ?: "N/A"
-        val protocol = conn.url.protocol ?: "N/A"
-        conn.disconnect()
-        "Success\nHTTP: $code\nProtocol: $protocol\nCipher: $cipher"
-    } catch (e: Exception) {
-        val cause = e.cause?.let { " | Cause: ${it.javaClass.simpleName}: ${it.message}" } ?: ""
-        "Failed: ${e.javaClass.simpleName}: ${e.message}$cause"
-    }
-}
-
-@Composable
-private fun ChangePasswordDialog(onDismiss: () -> Unit) {
-    var oldPassword by remember { mutableStateOf("") }
-    var newPassword by remember { mutableStateOf("") }
-    var isSubmitting by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf("") }
-    var showMessage by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Change password") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = oldPassword,
-                    onValueChange = { oldPassword = it; showMessage = false },
-                    label = { Text("Old password") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = newPassword,
-                    onValueChange = { newPassword = it; showMessage = false },
-                    label = { Text("New password") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                if (showMessage) {
-                    Text(
-                        text = message,
-                        color = if (message.startsWith("Success")) Color(0xFF2E7D32) else Color(0xFFD35C55),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (isSubmitting) return@Button
-                    if (oldPassword.isBlank() || newPassword.isBlank()) {
-                        message = "Please fill all fields"
-                        showMessage = true
-                        return@Button
-                    }
-                    isSubmitting = true
-                    scope.launch {
-                        val result = withContext(Dispatchers.IO) {
-                            changePassword(oldPassword.trim(), newPassword.trim())
-                        }
-                        isSubmitting = false
-                        if (result.success) {
-                            message = "Success: password updated"
-                            showMessage = true
-                            onDismiss()
-                        } else {
-                            message = result.message
-                            showMessage = true
-                        }
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = DashboardChip)
-            ) {
-                Text(if (isSubmitting) "Saving..." else "Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
-}
-
-private data class ChangePasswordResult(val success: Boolean, val message: String)
-
-private fun changePassword(oldPassword: String, newPassword: String): ChangePasswordResult {
-    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/auth/change-password")
-    val payload = """{"oldPassword":"${escapeJson(oldPassword)}","newPassword":"${escapeJson(newPassword)}"}"""
-    return try {
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            setRequestProperty("Content-Type", "application/json")
-            PatientSession.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
-            connectTimeout = 10000
-            readTimeout = 10000
-            doOutput = true
-        }
-        conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-        val code = conn.responseCode
-        val body = readStream(if (code in 200..299) conn.inputStream else conn.errorStream)
-        conn.disconnect()
-        when {
-            code in 200..299 -> ChangePasswordResult(true, "")
-            code == 401 || code == 403 -> ChangePasswordResult(false, "Unauthorized")
-            else -> ChangePasswordResult(false, body.ifBlank { "Change failed (HTTP $code)" })
-        }
-    } catch (e: Exception) {
-        ChangePasswordResult(false, e.message ?: "Network error")
-    }
-}
-
-private fun readStream(stream: java.io.InputStream?): String {
-    if (stream == null) return ""
-    return BufferedReader(InputStreamReader(stream)).use { it.readText() }
-}
-
-private fun escapeJson(value: String): String {
-    return value
-        .replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-}
+private fun escapeJson(value: String): String = value
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+    .replace("\n", "\\n")
+    .replace("\r", "\\r")
