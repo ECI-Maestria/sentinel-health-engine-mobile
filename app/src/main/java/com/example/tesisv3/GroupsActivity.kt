@@ -472,7 +472,7 @@ private fun linkCaretaker(patientId: String, email: String): CaretakerLinkResult
     if (patientId.isBlank()) return CaretakerLinkResult(false, "patientId vacío")
     val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients/$patientId/caretakers")
     val caretakerId = java.util.UUID.randomUUID().toString()
-    val payload = """{"caretakerId":"${escapeJson(caretakerId)}","caretakerEmail":"${escapeJson(email)}"}"""
+    val payload = """{"caretakerEmail":"${escapeJson(email)}"}"""
     return sendCaretakerRequest(url, "POST", payload)
 }
 

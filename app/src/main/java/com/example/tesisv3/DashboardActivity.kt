@@ -6,6 +6,7 @@ import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,6 +31,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -43,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -56,7 +63,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size as GeoSize
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -85,7 +99,6 @@ import javax.net.ssl.HttpsURLConnection
 import org.json.JSONArray
 import org.json.JSONObject
 
-// ── Data models ───────────────────────────────────────────────────────────────
 
 private data class DashVitals(
     val heartRate: Int?,
@@ -117,6 +130,20 @@ private data class DashReminder(
     val title: String,
     val timeLabel: String,
     val recurrenceLabel: String
+)
+
+private data class VitalHistoryPoint(
+    val timestamp: Long,
+    val heartRate: Int?,
+    val spO2: Int?
+)
+
+private data class HistoryDebugInfo(
+    val requestUrl: String,
+    val httpCode: Int,       // 0 = never reached, -1 = exception before connect
+    val rawResponse: String,
+    val exception: String?,
+    val points: List<VitalHistoryPoint>
 )
 
 class DashboardActivity : ComponentActivity(), MessageClient.OnMessageReceivedListener {
@@ -204,6 +231,10 @@ private fun DashboardScreen(onBack: () -> Unit, liveVitals: MutableState<DashVit
     var medications by remember { mutableStateOf<List<DashMedication>>(emptyList()) }
     var appointments by remember { mutableStateOf<List<DashAppointment>>(emptyList()) }
     var reminders by remember { mutableStateOf<List<DashReminder>>(emptyList()) }
+    var vitalsHistory by remember { mutableStateOf<List<VitalHistoryPoint>>(emptyList()) }
+    var historyLoading by remember { mutableStateOf(true) }
+    var historyDebug by remember { mutableStateOf<HistoryDebugInfo?>(null) }
+    var showHistoryDebug by remember { mutableStateOf(false) }
     var wearableConnected by remember { mutableStateOf<Boolean?>(null) }
 
     LaunchedEffect(Unit) {
@@ -223,6 +254,10 @@ private fun DashboardScreen(onBack: () -> Unit, liveVitals: MutableState<DashVit
         medications = withContext(Dispatchers.IO) { fetchDashMedications(patientId) }
         appointments = withContext(Dispatchers.IO) { fetchDashAppointments(patientId, today) }
         reminders = withContext(Dispatchers.IO) { fetchDashReminders(patientId, today) }
+        val histResult = withContext(Dispatchers.IO) { fetchVitalsHistory(patientId) }
+        vitalsHistory = histResult.points
+        historyDebug = histResult
+        historyLoading = false
     }
 
     val firstName = PatientSession.currentUser?.firstName
@@ -284,6 +319,13 @@ private fun DashboardScreen(onBack: () -> Unit, liveVitals: MutableState<DashVit
                 }
                 item { VitalsCard(vitals = vitals) }
                 item {
+                    VitalsHistoryCard(
+                        points = vitalsHistory,
+                        isLoading = historyLoading,
+                        onDebugClick = { showHistoryDebug = true }
+                    )
+                }
+                item {
                     MedicationsSection(
                         medications = medications.take(3),
                         onSeeAll = { context.startActivity(Intent(context, CareActivity::class.java)) }
@@ -303,6 +345,92 @@ private fun DashboardScreen(onBack: () -> Unit, liveVitals: MutableState<DashVit
                 }
             }
         }
+    }
+
+    // ── Debug modal ───────────────────────────────────────────────────────────
+    if (showHistoryDebug) {
+        val info = historyDebug
+        AlertDialog(
+            onDismissRequest = { showHistoryDebug = false },
+            title = { Text("Debug — Historial de Vitales", fontWeight = FontWeight.Bold) },
+            text = {
+                val scroll = rememberScrollState()
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(scroll),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (info == null) {
+                        Text("Aún sin datos. Espera a que termine la carga.", color = DashMuted)
+                    } else {
+                        // Request
+                        Text("REQUEST", color = DashGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            info.requestUrl,
+                            fontSize = 11.sp,
+                            color = DashText,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(DashGreenChip, RoundedCornerShape(8.dp))
+                                .padding(8.dp)
+                        )
+                        // HTTP status
+                        Text("HTTP STATUS", color = DashGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        val codeColor = when {
+                            info.httpCode in 200..299 -> Color(0xFF2E7D32)
+                            info.httpCode == -1 -> DashMuted
+                            else -> Color(0xFFD32F2F)
+                        }
+                        Text(
+                            if (info.httpCode == -1) "Excepción antes de conectar" else info.httpCode.toString(),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = codeColor
+                        )
+                        // Exception (if any)
+                        if (!info.exception.isNullOrBlank()) {
+                            Text("EXCEPCIÓN", color = Color(0xFFD32F2F), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                info.exception,
+                                fontSize = 11.sp,
+                                color = Color(0xFFD32F2F),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFFFFEBEE), RoundedCornerShape(8.dp))
+                                    .padding(8.dp)
+                            )
+                        }
+                        // Raw response
+                        Text("RESPONSE BODY", color = DashGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        val preview = if (info.rawResponse.isBlank()) "(vacío)"
+                        else info.rawResponse.take(2000)
+                        Text(
+                            preview,
+                            fontSize = 10.sp,
+                            color = DashText,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp))
+                                .padding(8.dp)
+                        )
+                        // Points parsed
+                        Text("PUNTOS PARSEADOS", color = DashGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "${info.points.size} puntos  (HR: ${info.points.count { it.heartRate != null }}, SpO2: ${info.points.count { it.spO2 != null }})",
+                            fontSize = 12.sp,
+                            color = DashText
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showHistoryDebug = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = DashGreenLight)
+                ) { Text("Cerrar") }
+            }
+        )
     }
 }
 
@@ -568,14 +696,14 @@ private fun MedicationRow(med: DashMedication) {
                 Text("Due", color = DashDue, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         } else {
-            Switch(
-                checked = med.active,
-                onCheckedChange = null,
-                colors = SwitchDefaults.colors(
-                    checkedTrackColor = DashGreenLight,
-                    uncheckedTrackColor = Color(0xFFCCCCCC)
-                )
-            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(DashGreen)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text("Activo", color = DashDue, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }
@@ -681,6 +809,277 @@ private fun ReminderRow(reminder: DashReminder) {
             }
         }
         Text(subtitle, color = DashMuted, fontSize = 13.sp)
+    }
+}
+
+// ── Vitals history chart ──────────────────────────────────────────────────────
+
+private val ChartHrColor = Color(0xFF5BCB90)      // green  → FC
+private val ChartSpo2Color = Color(0xFF4A90D9)    // blue   → SpO2
+private val ChartGridColor = Color(0xFFEAEDEA)
+
+@Composable
+private fun VitalsHistoryCard(
+    points: List<VitalHistoryPoint>,
+    isLoading: Boolean,
+    onDebugClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = DashCard
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        "📈 Ritmo Cardíaco y SpO2",
+                        color = DashText,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text("Últimos 30 días", color = DashMuted, fontSize = 12.sp)
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ChartLegendDot(ChartHrColor, "FC")
+                    ChartLegendDot(ChartSpo2Color, "SpO2")
+                    // Debug button
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(DashGreenChip)
+                            .clickable(onClick = onDebugClick)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("🔍", fontSize = 14.sp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            when {
+                isLoading -> ChartPlaceholderBox("Cargando historial...")
+                points.isEmpty() -> ChartPlaceholderBox("Sin datos disponibles")
+                else -> VitalsLineChart(points)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChartLegendDot(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(width = 14.dp, height = 3.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(color)
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(label, color = DashMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun ChartPlaceholderBox(msg: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(160.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(msg, color = DashMuted, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun VitalsLineChart(rawPoints: List<VitalHistoryPoint>) {
+    // Group by calendar day → average per day
+    val grouped = rawPoints
+        .groupBy {
+            Instant.ofEpochMilli(it.timestamp)
+                .atZone(ZoneId.systemDefault()).toLocalDate()
+        }
+        .toSortedMap()
+
+    data class DayPoint(val label: String, val hr: Int?, val spo2: Int?)
+
+    val daily = grouped.map { (date, pts) ->
+        val avgHr = pts.mapNotNull { it.heartRate }
+            .let { if (it.isEmpty()) null else it.average().toInt() }
+        val avgSpo2 = pts.mapNotNull { it.spO2 }
+            .let { if (it.isEmpty()) null else it.average().toInt() }
+        DayPoint("${date.dayOfMonth}/${date.monthValue}", avgHr, avgSpo2)
+    }
+
+    val n = daily.size.coerceAtLeast(2)
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(170.dp)
+    ) {
+        val padL = 46f
+        val padR = 46f
+        val padT = 10f
+        val padB = 26f
+        val cW = size.width - padL - padR
+        val cH = size.height - padT - padB
+
+        // ── Y-ranges ──────────────────────────────────────────────────────────
+        val hrVals = daily.mapNotNull { it.hr }
+        val hrMin = if (hrVals.isEmpty()) 40 else (hrVals.min() - 10).coerceAtLeast(30)
+        val hrMax = if (hrVals.isEmpty()) 180 else (hrVals.max() + 10)
+        val hrRange = (hrMax - hrMin).coerceAtLeast(1).toFloat()
+
+        val sVals = daily.mapNotNull { it.spo2 }
+        val sMin = if (sVals.isEmpty()) 85 else (sVals.min() - 2).coerceAtLeast(80)
+        val sMax = if (sVals.isEmpty()) 100 else (sVals.max() + 1).coerceAtMost(102)
+        val sRange = (sMax - sMin).coerceAtLeast(1).toFloat()
+
+        // ── Coordinate helpers ────────────────────────────────────────────────
+        fun xOf(i: Int): Float = padL + (i.toFloat() / (n - 1).coerceAtLeast(1)) * cW
+        fun yOfHr(v: Int): Float = padT + cH - ((v - hrMin) / hrRange) * cH
+        fun yOfS(v: Int): Float = padT + cH - ((v - sMin) / sRange) * cH
+
+        // ── Chart background ──────────────────────────────────────────────────
+        drawRect(
+            color = Color(0xFFF7FAF8),
+            topLeft = Offset(padL, padT),
+            size = GeoSize(cW, cH)
+        )
+
+        // ── Horizontal grid lines (4) ─────────────────────────────────────────
+        repeat(5) { j ->
+            val y = padT + cH * j / 4f
+            drawLine(
+                color = ChartGridColor,
+                start = Offset(padL, y),
+                end = Offset(padL + cW, y),
+                strokeWidth = 1f
+            )
+        }
+
+        // ── HR filled-area (semi-transparent) ────────────────────────────────
+        val hrFill = Path()
+        var first = true
+        daily.forEachIndexed { i, dp ->
+            dp.hr?.let { v ->
+                val x = xOf(i); val y = yOfHr(v)
+                if (first) { hrFill.moveTo(x, padT + cH); hrFill.lineTo(x, y); first = false }
+                else hrFill.lineTo(x, y)
+            }
+        }
+        val lastHrIdx = daily.indexOfLast { it.hr != null }
+        if (!first && lastHrIdx >= 0) {
+            hrFill.lineTo(xOf(lastHrIdx), padT + cH)
+            hrFill.close()
+        }
+        drawPath(hrFill, color = ChartHrColor.copy(alpha = 0.10f))
+
+        // ── SpO2 filled-area ──────────────────────────────────────────────────
+        val sFill = Path()
+        var sFirst = true
+        daily.forEachIndexed { i, dp ->
+            dp.spo2?.let { v ->
+                val x = xOf(i); val y = yOfS(v)
+                if (sFirst) { sFill.moveTo(x, padT + cH); sFill.lineTo(x, y); sFirst = false }
+                else sFill.lineTo(x, y)
+            }
+        }
+        val lastSIdx = daily.indexOfLast { it.spo2 != null }
+        if (!sFirst && lastSIdx >= 0) {
+            sFill.lineTo(xOf(lastSIdx), padT + cH)
+            sFill.close()
+        }
+        drawPath(sFill, color = ChartSpo2Color.copy(alpha = 0.10f))
+
+        // ── HR line ───────────────────────────────────────────────────────────
+        val hrLine = Path()
+        var hrFirst = true
+        daily.forEachIndexed { i, dp ->
+            dp.hr?.let { v ->
+                val x = xOf(i); val y = yOfHr(v)
+                if (hrFirst) { hrLine.moveTo(x, y); hrFirst = false } else hrLine.lineTo(x, y)
+            }
+        }
+        drawPath(
+            hrLine, color = ChartHrColor,
+            style = Stroke(width = 2.2f * density, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+
+        // ── SpO2 line ─────────────────────────────────────────────────────────
+        val sLine = Path()
+        var sLineFirst = true
+        daily.forEachIndexed { i, dp ->
+            dp.spo2?.let { v ->
+                val x = xOf(i); val y = yOfS(v)
+                if (sLineFirst) { sLine.moveTo(x, y); sLineFirst = false } else sLine.lineTo(x, y)
+            }
+        }
+        drawPath(
+            sLine, color = ChartSpo2Color,
+            style = Stroke(width = 2.2f * density, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+
+        // ── Data dots ─────────────────────────────────────────────────────────
+        daily.forEachIndexed { i, dp ->
+            dp.hr?.let {
+                drawCircle(ChartHrColor, radius = 2.8f * density, center = Offset(xOf(i), yOfHr(it)))
+                drawCircle(Color.White, radius = 1.4f * density, center = Offset(xOf(i), yOfHr(it)))
+            }
+            dp.spo2?.let {
+                drawCircle(ChartSpo2Color, radius = 2.8f * density, center = Offset(xOf(i), yOfS(it)))
+                drawCircle(Color.White, radius = 1.4f * density, center = Offset(xOf(i), yOfS(it)))
+            }
+        }
+
+        // ── Text labels via nativeCanvas ──────────────────────────────────────
+        val basePaint = android.graphics.Paint().apply {
+            textSize = 23f
+            isAntiAlias = true
+        }
+
+        // Left Y-axis — FC (green)
+        val hrPaint = android.graphics.Paint(basePaint).apply {
+            color = android.graphics.Color.parseColor("#5BCB90")
+            textAlign = android.graphics.Paint.Align.RIGHT
+        }
+        for (j in 0..3) {
+            val v = hrMin + ((hrMax - hrMin) * (4 - j) / 4)
+            val y = padT + cH * j / 4f + 8f
+            drawContext.canvas.nativeCanvas.drawText(v.toString(), padL - 5f, y, hrPaint)
+        }
+
+        // Right Y-axis — SpO2 (blue)
+        val sPaint = android.graphics.Paint(basePaint).apply {
+            color = android.graphics.Color.parseColor("#4A90D9")
+            textAlign = android.graphics.Paint.Align.LEFT
+        }
+        for (j in 0..3) {
+            val v = sMin + ((sMax - sMin) * (4 - j) / 4)
+            val y = padT + cH * j / 4f + 8f
+            drawContext.canvas.nativeCanvas.drawText(v.toInt().toString(), padL + cW + 5f, y, sPaint)
+        }
+
+        // X-axis — date labels (show ~5 evenly-spaced)
+        val xPaint = android.graphics.Paint(basePaint).apply {
+            color = android.graphics.Color.parseColor("#7B8D80")
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+        val labelEvery = maxOf(1, n / 5)
+        daily.forEachIndexed { i, dp ->
+            if (i % labelEvery == 0 || i == n - 1) {
+                drawContext.canvas.nativeCanvas.drawText(
+                    dp.label, xOf(i), padT + cH + padB - 4f, xPaint
+                )
+            }
+        }
     }
 }
 
@@ -851,6 +1250,74 @@ private fun fetchDashReminders(patientId: String, date: String): List<DashRemind
         list
     } catch (_: Exception) {
         emptyList()
+    }
+}
+
+private fun fetchVitalsHistory(patientId: String): HistoryDebugInfo {
+    val to = LocalDate.now()
+    val from = to.minusDays(29)
+    val fmt = DateTimeFormatter.ISO_LOCAL_DATE
+    val urlStr = "https://analytics-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io" +
+            "/v1/patients/$patientId/vitals/history" +
+            "?from=${from.format(fmt)}&to=${to.format(fmt)}"
+
+    if (patientId.isBlank()) {
+        return HistoryDebugInfo(urlStr, -1, "", "patientId vacío", emptyList())
+    }
+
+    return try {
+        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("Content-Type", "application/json")
+            PatientSession.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+            connectTimeout = 12000
+            readTimeout = 12000
+        }
+        val code = conn.responseCode
+        val body = readDashStream(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+
+        if (code !in 200..299 || body.isBlank()) {
+            return HistoryDebugInfo(urlStr, code, body, null, emptyList())
+        }
+
+        val json = JSONObject(body)
+        // Try common root-array keys
+        val arr = json.optJSONArray("readings")
+            ?: json.optJSONArray("history")
+            ?: json.optJSONArray("vitals")
+            ?: json.optJSONArray("data")
+            ?: return HistoryDebugInfo(
+                urlStr, code, body,
+                "No se encontró array en claves: readings / history / vitals / data. Keys presentes: ${json.keys().asSequence().joinToString()}",
+                emptyList()
+            )
+
+        val list = mutableListOf<VitalHistoryPoint>()
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val tsStr = item.optString("measuredAt").ifBlank {
+                item.optString("timestamp").ifBlank { item.optString("date") }
+            }
+            val ts = try { Instant.parse(tsStr).toEpochMilli() } catch (_: Exception) { continue }
+            // heartRate comes as Int
+            val hr = item.optInt("heartRate").takeIf { it > 0 }
+                ?: item.optInt("hr").takeIf { it > 0 }
+            // spO2 can be Double (e.g. 98.5) — read as Double then round
+            val spo2Raw = item.opt("spO2") ?: item.opt("oxygenSaturation") ?: item.opt("spo2")
+            val spo2 = when (spo2Raw) {
+                is Double -> spo2Raw.toInt().takeIf { it > 0 }
+                is Int    -> spo2Raw.takeIf { it > 0 }
+                is Float  -> spo2Raw.toInt().takeIf { it > 0 }
+                else      -> null
+            }
+            if (hr != null || spo2 != null) {
+                list.add(VitalHistoryPoint(ts, hr, spo2))
+            }
+        }
+        HistoryDebugInfo(urlStr, code, body, null, list.sortedBy { it.timestamp })
+    } catch (e: Exception) {
+        HistoryDebugInfo(urlStr, -1, "", "${e.javaClass.simpleName}: ${e.message}", emptyList())
     }
 }
 
