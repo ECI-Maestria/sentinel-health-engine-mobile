@@ -132,7 +132,11 @@ private fun CalendarScreen(onBack: () -> Unit) {
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
     var feedbackSuccess by remember { mutableStateOf(true) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    var wearableConnected by remember { mutableStateOf<Boolean?>(null) }
 
+    LaunchedEffect(Unit) {
+        wearableConnected = withContext(Dispatchers.IO) { isWearableConnected(context) }
+    }
     LaunchedEffect(Unit) {
         apiAppointments = withContext(Dispatchers.IO) { fetchAppointments(PatientSession.patientId) }
     }
@@ -176,7 +180,7 @@ private fun CalendarScreen(onBack: () -> Unit) {
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                item { CalendarTopBar(onMenu = { scope.launch { drawerState.open() } }) }
+                item { CalendarTopBar(wearableConnected = wearableConnected, onMenu = { scope.launch { drawerState.open() } }) }
 
             item {
                 CalendarCard(
@@ -327,7 +331,7 @@ private fun CalendarScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun CalendarTopBar(onMenu: () -> Unit) {
+private fun CalendarTopBar(wearableConnected: Boolean?, onMenu: () -> Unit) {
     val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -346,10 +350,13 @@ private fun CalendarTopBar(onMenu: () -> Unit) {
         ) {
             Icon(Icons.Outlined.EventNote, contentDescription = "Brand", tint = CalendarNav)
         }
-        IconButton(onClick = {
-            context.startActivity(Intent(context, NotificationsActivity::class.java))
-        }) {
-            Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = CalendarNav)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            WatchStatusIcon(wearableConnected = wearableConnected)
+            IconButton(onClick = {
+                context.startActivity(Intent(context, NotificationsActivity::class.java))
+            }) {
+                Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = CalendarNav)
+            }
         }
     }
 }

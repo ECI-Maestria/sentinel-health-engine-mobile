@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalHospital
+import androidx.compose.material.icons.filled.Watch
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -15,6 +16,41 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.google.android.gms.tasks.Tasks
+import com.google.android.gms.wearable.Wearable
+
+// ── Shared wearable helpers ───────────────────────────────────────────────────
+
+/** Checks (blocking — call from IO thread) whether any Wear OS node is paired. */
+fun isWearableConnected(context: android.content.Context): Boolean = try {
+    Tasks.await(Wearable.getNodeClient(context).connectedNodes).isNotEmpty()
+} catch (_: Exception) { false }
+
+/**
+ * Smartwatch status icon.
+ * Green  = connected | Red = not connected | Gray = still checking (null)
+ */
+@Composable
+fun WatchStatusIcon(wearableConnected: Boolean?, modifier: Modifier = Modifier) {
+    val tint = when (wearableConnected) {
+        true  -> Color(0xFF4CAF50)
+        false -> Color(0xFFD64545)
+        null  -> Color(0xFFB0B8B2)
+    }
+    val desc = when (wearableConnected) {
+        true  -> "Reloj conectado"
+        false -> "Reloj desconectado"
+        null  -> "Verificando reloj"
+    }
+    Icon(
+        imageVector = Icons.Filled.Watch,
+        contentDescription = desc,
+        tint = tint,
+        modifier = modifier
+    )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 enum class BottomNavDestination {
     DASHBOARD,

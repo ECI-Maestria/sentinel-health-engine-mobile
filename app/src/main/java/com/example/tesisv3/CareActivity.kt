@@ -127,7 +127,11 @@ private fun CareScreen(onBack: () -> Unit) {
     var showSheet by remember { mutableStateOf(false) }
     var editingItem by remember { mutableStateOf<ApiMedication?>(null) }
     var deletingItem by remember { mutableStateOf<ApiMedication?>(null) }
+    var wearableConnected by remember { mutableStateOf<Boolean?>(null) }
 
+    LaunchedEffect(Unit) {
+        wearableConnected = withContext(Dispatchers.IO) { isWearableConnected(context) }
+    }
     LaunchedEffect(Unit) {
         medications = withContext(Dispatchers.IO) {
             fetchMedications(PatientSession.patientId)
@@ -173,7 +177,7 @@ private fun CareScreen(onBack: () -> Unit) {
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                item { CareTopBar(onMenu = { scope.launch { drawerState.open() } }) }
+                item { CareTopBar(wearableConnected = wearableConnected, onMenu = { scope.launch { drawerState.open() } }) }
 
             item {
                 Row(
@@ -313,7 +317,7 @@ private fun CareScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun CareTopBar(onMenu: () -> Unit) {
+private fun CareTopBar(wearableConnected: Boolean?, onMenu: () -> Unit) {
     val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -332,10 +336,13 @@ private fun CareTopBar(onMenu: () -> Unit) {
         ) {
             Icon(Icons.Outlined.MedicalServices, contentDescription = "Brand", tint = CareNav)
         }
-        IconButton(onClick = {
-            context.startActivity(Intent(context, NotificationsActivity::class.java))
-        }) {
-            Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = CareNav)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            WatchStatusIcon(wearableConnected = wearableConnected)
+            IconButton(onClick = {
+                context.startActivity(Intent(context, NotificationsActivity::class.java))
+            }) {
+                Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = CareNav)
+            }
         }
     }
 }

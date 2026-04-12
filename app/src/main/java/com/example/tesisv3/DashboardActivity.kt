@@ -465,28 +465,21 @@ private fun DashTopBar(
                 fontWeight = FontWeight.Bold
             )
         }
+        // Watch status indicator
+        WatchStatusIcon(
+            wearableConnected = wearableConnected,
+            modifier = Modifier
+                .size(24.dp)
+                .padding(end = 2.dp)
+        )
         IconButton(onClick = {
             context.startActivity(Intent(context, NotificationsActivity::class.java))
         }) {
-            Box {
-                Icon(
-                    Icons.Outlined.NotificationsNone,
-                    contentDescription = "Notificaciones",
-                    tint = DashNav
-                )
-                val dotColor = when (wearableConnected) {
-                    true -> Color(0xFF4CAF50)
-                    false -> Color(0xFFD64545)
-                    null -> Color(0xFFB0B8B2)
-                }
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(dotColor)
-                        .align(Alignment.TopEnd)
-                )
-            }
+            Icon(
+                Icons.Outlined.NotificationsNone,
+                contentDescription = "Notificaciones",
+                tint = DashNav
+            )
         }
         Box(
             modifier = Modifier
@@ -1437,15 +1430,6 @@ private fun formatVitalsTimestamp(isoString: String): String {
         }
     } catch (_: Exception) {
         "—"
-    }
-}
-
-private fun isWearableConnected(context: android.content.Context): Boolean {
-    return try {
-        val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
-        nodes.isNotEmpty()
-    } catch (_: Exception) {
-        false
     }
 }
 

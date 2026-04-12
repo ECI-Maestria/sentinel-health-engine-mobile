@@ -107,7 +107,11 @@ private fun GroupsScreen(onBack: () -> Unit) {
     var isSubmitting by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var messageSuccess by remember { mutableStateOf(true) }
+    var wearableConnected by remember { mutableStateOf<Boolean?>(null) }
 
+    LaunchedEffect(Unit) {
+        wearableConnected = withContext(Dispatchers.IO) { isWearableConnected(context) }
+    }
     LaunchedEffect(Unit) {
         caretakers = withContext(Dispatchers.IO) {
             fetchCaretakers(PatientSession.patientId)
@@ -153,7 +157,7 @@ private fun GroupsScreen(onBack: () -> Unit) {
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                item { GroupsTopBar(onMenu = { scope.launch { drawerState.open() } }) }
+                item { GroupsTopBar(wearableConnected = wearableConnected, onMenu = { scope.launch { drawerState.open() } }) }
 
                 item {
                     InfoCard()
@@ -269,7 +273,7 @@ private fun GroupsScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun GroupsTopBar(onMenu: () -> Unit) {
+private fun GroupsTopBar(wearableConnected: Boolean?, onMenu: () -> Unit) {
     val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -288,10 +292,13 @@ private fun GroupsTopBar(onMenu: () -> Unit) {
         ) {
             Text(text = "+", color = GroupsText, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         }
-        IconButton(onClick = {
-            context.startActivity(Intent(context, NotificationsActivity::class.java))
-        }) {
-            Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = GroupsNav)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            WatchStatusIcon(wearableConnected = wearableConnected)
+            IconButton(onClick = {
+                context.startActivity(Intent(context, NotificationsActivity::class.java))
+            }) {
+                Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = GroupsNav)
+            }
         }
     }
 }

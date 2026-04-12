@@ -101,6 +101,9 @@ class LoginActivity : ComponentActivity() {
                             LoginDestination.DOCTOR -> {
                                 startActivity(Intent(this, DoctorPatientsActivity::class.java))
                             }
+                            LoginDestination.CARETAKER_NO_PATIENTS -> {
+                                startActivity(Intent(this, CaretakerNoPatientsActivity::class.java))
+                            }
                         }
                         finish()
                     }
@@ -293,10 +296,25 @@ private fun LoginScreen(onLoginDestination: (LoginDestination) -> Unit) {
                                     }
                                     DeviceRegistrationManager.registerIfNeeded(context)
                                     val role = PatientSession.currentUser?.role
-                                    if (role != null && role.equals("DOCTOR", ignoreCase = true)) {
-                                        onLoginDestination(LoginDestination.DOCTOR)
-                                    } else {
-                                        onLoginDestination(LoginDestination.DASHBOARD)
+                                    when {
+                                        role?.equals("DOCTOR", ignoreCase = true) == true -> {
+                                            onLoginDestination(LoginDestination.DOCTOR)
+                                        }
+                                        role?.equals("CARETAKER", ignoreCase = true) == true -> {
+                                            val patients = withContext(Dispatchers.IO) {
+                                                fetchCaretakerPatientIds()
+                                            }
+                                            if (patients.isEmpty()) {
+                                                onLoginDestination(LoginDestination.CARETAKER_NO_PATIENTS)
+                                            } else {
+                                                // Link session to first assigned patient
+                                                PatientSession.patientId = patients.first()
+                                                onLoginDestination(LoginDestination.DASHBOARD)
+                                            }
+                                        }
+                                        else -> {
+                                            onLoginDestination(LoginDestination.DASHBOARD)
+                                        }
                                     }
                                 } else {
                                     showError = true
@@ -378,7 +396,8 @@ private fun LoginScreen(onLoginDestination: (LoginDestination) -> Unit) {
 
 private enum class LoginDestination {
     DASHBOARD,
-    DOCTOR
+    DOCTOR,
+    CARETAKER_NO_PATIENTS
 }
 
 private data class LoginResult(val success: Boolean, val message: String)
