@@ -1,12 +1,14 @@
 package com.example.tesisv3
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.Watch
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -19,17 +21,10 @@ import androidx.compose.ui.unit.dp
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.Wearable
 
-// ── Shared wearable helpers ───────────────────────────────────────────────────
-
-/** Checks (blocking — call from IO thread) whether any Wear OS node is paired. */
 fun isWearableConnected(context: android.content.Context): Boolean = try {
     Tasks.await(Wearable.getNodeClient(context).connectedNodes).isNotEmpty()
 } catch (_: Exception) { false }
 
-/**
- * Smartwatch status icon.
- * Green  = connected | Red = not connected | Gray = still checking (null)
- */
 @Composable
 fun WatchStatusIcon(wearableConnected: Boolean?, modifier: Modifier = Modifier) {
     val tint = when (wearableConnected) {
@@ -50,13 +45,13 @@ fun WatchStatusIcon(wearableConnected: Boolean?, modifier: Modifier = Modifier) 
     )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 
 enum class BottomNavDestination {
     DASHBOARD,
     GROUPS,
     CALENDAR,
-    CARE
+    CARE,
+    REPORTS
 }
 
 @Composable
@@ -68,18 +63,30 @@ fun AppBottomNav(
     unselectedColor: Color
 ) {
     val context = LocalContext.current
+    val role = PatientSession.currentUser?.role?.uppercase()
 
     NavigationBar(
         containerColor = Color.White,
         tonalElevation = 4.dp,
         modifier = modifier
     ) {
-        val items = listOf(
-            BottomNavDestination.DASHBOARD to Icons.Filled.Home,
-            BottomNavDestination.GROUPS to Icons.Filled.Groups,
-            BottomNavDestination.CALENDAR to Icons.Filled.DateRange,
-            BottomNavDestination.CARE to Icons.Filled.LocalHospital
-        )
+        val isDoctor = role == "DOCTOR"
+        val isCaretaker = role == "CARETAKER"
+        val items = if (isDoctor) {
+            listOf(
+                BottomNavDestination.DASHBOARD to Icons.Filled.Home,
+                BottomNavDestination.GROUPS to Icons.Filled.Groups,
+                BottomNavDestination.CALENDAR to Icons.Filled.DateRange,
+                BottomNavDestination.REPORTS to Icons.Outlined.Description
+            )
+        } else {
+            listOf(
+                BottomNavDestination.DASHBOARD to Icons.Filled.Home,
+                BottomNavDestination.GROUPS to Icons.Filled.Groups,
+                BottomNavDestination.CALENDAR to Icons.Filled.DateRange,
+                BottomNavDestination.CARE to Icons.Filled.LocalHospital
+            )
+        }
 
         items.forEach { (dest, icon) ->
             val isSelected = current == dest
@@ -87,18 +94,51 @@ fun AppBottomNav(
                 selected = isSelected,
                 onClick = {
                     if (isSelected) return@NavigationBarItem
-                    when (dest) {
-                        BottomNavDestination.DASHBOARD -> {
-                            context.startActivity(Intent(context, DashboardActivity::class.java))
+                    val clickRole = PatientSession.currentUser?.role?.trim()?.uppercase()
+                    val doctorClick = clickRole == "DOCTOR"
+                    val caretakerClick = clickRole == "CARETAKER"
+                    if (doctorClick) {
+                        when (dest) {
+                            BottomNavDestination.DASHBOARD,
+                            BottomNavDestination.CARE -> {
+                                context.startActivity(Intent(context, DoctorPatientsActivity::class.java))
+                            }
+                            BottomNavDestination.GROUPS -> {
+                                context.startActivity(Intent(context, DoctorPatientsListActivity::class.java))
+                            }
+                            BottomNavDestination.CALENDAR -> {
+                                context.startActivity(Intent(context, CalendarActivity::class.java))
+                            }
+                            BottomNavDestination.REPORTS -> {
+                                context.startActivity(Intent(context, ReportsActivity::class.java))
+                            }
                         }
-                        BottomNavDestination.GROUPS -> {
-                            context.startActivity(Intent(context, GroupsActivity::class.java))
+                    } else if (caretakerClick) {
+                        when (dest) {
+                            BottomNavDestination.DASHBOARD, BottomNavDestination.GROUPS -> {
+                                context.startActivity(Intent(context, GroupsActivity::class.java))
+                            }
+                            BottomNavDestination.CALENDAR,
+                            BottomNavDestination.CARE,
+                            BottomNavDestination.REPORTS -> {
+                                Toast.makeText(context, "Disponible solo para pacientes", Toast.LENGTH_SHORT).show()
+                            }
                         }
-                        BottomNavDestination.CALENDAR -> {
-                            context.startActivity(Intent(context, CalendarActivity::class.java))
-                        }
-                        BottomNavDestination.CARE -> {
-                            context.startActivity(Intent(context, CareActivity::class.java))
+                    } else {
+                        when (dest) {
+                            BottomNavDestination.DASHBOARD -> {
+                                context.startActivity(Intent(context, DashboardActivity::class.java))
+                            }
+                            BottomNavDestination.GROUPS -> {
+                                context.startActivity(Intent(context, GroupsActivity::class.java))
+                            }
+                            BottomNavDestination.CALENDAR -> {
+                                context.startActivity(Intent(context, CalendarActivity::class.java))
+                            }
+                            BottomNavDestination.CARE -> {
+                                context.startActivity(Intent(context, CareActivity::class.java))
+                            }
+                            BottomNavDestination.REPORTS -> { /* patients never see this tab */ }
                         }
                     }
                 },

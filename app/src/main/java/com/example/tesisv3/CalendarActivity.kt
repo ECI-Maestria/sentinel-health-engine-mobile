@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.EventNote
 import androidx.compose.material3.Button
@@ -43,6 +44,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -123,6 +126,9 @@ private fun CalendarScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val appointments by dao.observeAll().collectAsState(initial = emptyList())
     var apiAppointments by remember { mutableStateOf<List<ApiAppointment>>(emptyList()) }
+    var patients by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
+    var selectedPatient by remember { mutableStateOf<UserProfile?>(null) }
+    var patientExpanded by remember { mutableStateOf(false) }
     var selectedDateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var displayedMonthMillis by remember { mutableStateOf(startOfMonth(System.currentTimeMillis())) }
     var showAddDialog by remember { mutableStateOf(false) }
@@ -133,12 +139,22 @@ private fun CalendarScreen(onBack: () -> Unit) {
     var feedbackSuccess by remember { mutableStateOf(true) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     var wearableConnected by remember { mutableStateOf<Boolean?>(null) }
+    val isDoctor = PatientSession.currentUser?.role?.equals("DOCTOR", ignoreCase = true) == true
 
     LaunchedEffect(Unit) {
         wearableConnected = withContext(Dispatchers.IO) { isWearableConnected(context) }
     }
     LaunchedEffect(Unit) {
-        apiAppointments = withContext(Dispatchers.IO) { fetchAppointments(PatientSession.patientId) }
+        if (isDoctor) {
+            val result = withContext(Dispatchers.IO) { fetchPatientsList() }
+            patients = result
+            selectedPatient = result.firstOrNull()
+            selectedPatient?.let {
+                apiAppointments = withContext(Dispatchers.IO) { fetchAppointments(it.id) }
+            }
+        } else {
+            apiAppointments = withContext(Dispatchers.IO) { fetchAppointments(PatientSession.patientId) }
+        }
     }
 
     ModalNavigationDrawer(
@@ -180,7 +196,28 @@ private fun CalendarScreen(onBack: () -> Unit) {
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                item { CalendarTopBar(wearableConnected = wearableConnected, onMenu = { scope.launch { drawerState.open() } }) }
+            item { CalendarTopBar(wearableConnected = wearableConnected, onMenu = { scope.launch { drawerState.open() } }) }
+
+            if (isDoctor) {
+                item {
+                    PatientPickerCard(
+                        label = "Paciente",
+                        patients = patients,
+                        selected = selectedPatient,
+                        expanded = patientExpanded,
+                        onExpandedChange = { patientExpanded = it },
+                        onSelect = { patient ->
+                            selectedPatient = patient
+                            patientExpanded = false
+                            scope.launch {
+                                apiAppointments = withContext(Dispatchers.IO) {
+                                    fetchAppointments(patient.id)
+                                }
+                            }
+                        }
+                    )
+                }
+            }
 
             item {
                 CalendarCard(
@@ -278,9 +315,14 @@ private fun CalendarScreen(onBack: () -> Unit) {
                         dao.update(entity)
                     }
                     val scheduledAt = toUtcIsoString(cal.timeInMillis)
+                    val targetPatientId = if (isDoctor) {
+                        selectedPatient?.id ?: PatientSession.patientId
+                    } else {
+                        PatientSession.patientId
+                    }
                     val result = withContext(Dispatchers.IO) {
                         sendAppointmentRequest(
-                            patientId = PatientSession.patientId,
+                            patientId = targetPatientId,
                             title = title,
                             scheduledAt = scheduledAt,
                             location = location,
@@ -288,7 +330,7 @@ private fun CalendarScreen(onBack: () -> Unit) {
                         )
                     }
                     if (result.success) {
-                        apiAppointments = withContext(Dispatchers.IO) { fetchAppointments(PatientSession.patientId) }
+                        apiAppointments = withContext(Dispatchers.IO) { fetchAppointments(targetPatientId) }
                         feedbackMessage = "Cita creada correctamente"
                         feedbackSuccess = true
                     } else {
@@ -756,6 +798,71 @@ private fun formatDateTime(timestamp: Long): String {
     return format.format(Date(timestamp))
 }
 
+@Composable
+private fun PatientPickerCard(
+    label: String,
+    patients: List<UserProfile>,
+    selected: UserProfile?,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onSelect: (UserProfile) -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFFE5F4EA),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(label, color = CalendarNav, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            Box {
+                OutlinedTextField(
+                    value = selected?.fullName ?: "Selecciona paciente",
+                    onValueChange = {},
+                    readOnly = true,
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFD3EBDD)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = (selected?.fullName ?: "P").take(1),
+                                color = CalendarNav,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { onExpandedChange(true) }) {
+                            Icon(Icons.Filled.Menu, contentDescription = "Select", tint = CalendarNav)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { onExpandedChange(false) }
+                ) {
+                    patients.forEach { patient ->
+                        DropdownMenuItem(
+                            text = { Text(patient.fullName.orEmpty()) },
+                            onClick = { onSelect(patient) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun formatTime(hour: Int, minute: Int): String {
     val hour12 = if (hour % 12 == 0) 12 else hour % 12
     val amPm = if (hour < 12) "AM" else "PM"
@@ -908,6 +1015,45 @@ private fun escapeJson(value: String): String {
         .replace("\"", "\\\"")
         .replace("\n", "\\n")
         .replace("\r", "\\r")
+}
+
+private fun fetchPatientsList(): List<UserProfile> {
+    val token = PatientSession.accessToken
+    if (token.isNullOrBlank()) return emptyList()
+    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients")
+    return try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10000
+            readTimeout = 10000
+            setRequestProperty("Authorization", "Bearer $token")
+        }
+        val code = conn.responseCode
+        val body = readStreamString(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+        if (code !in 200..299) return emptyList()
+        val json = JSONObject(body)
+        val array = json.optJSONArray("patients") ?: return emptyList()
+        val list = mutableListOf<UserProfile>()
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            list.add(
+                UserProfile(
+                    id = item.optString("id"),
+                    email = item.optString("email"),
+                    role = item.optString("role"),
+                    firstName = item.optString("firstName"),
+                    lastName = item.optString("lastName"),
+                    fullName = item.optString("fullName"),
+                    isActive = item.optBoolean("isActive", true),
+                    createdAt = item.optString("createdAt")
+                )
+            )
+        }
+        list
+    } catch (_: Exception) {
+        emptyList()
+    }
 }
 
 private fun readStream(stream: java.io.InputStream?) {

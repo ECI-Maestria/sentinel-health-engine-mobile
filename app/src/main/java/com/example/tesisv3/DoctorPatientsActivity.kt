@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,12 +42,16 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +74,8 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 class DoctorPatientsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -106,9 +113,11 @@ private fun DoctorPatientsScreen(refreshOnStart: Boolean) {
     var patients by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var selectedTab by remember { mutableIntStateOf(0) }
     var hasRefreshed by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    var alertPatient by remember { mutableStateOf<UserProfile?>(null) }
+    var alertExpanded by remember { mutableStateOf(false) }
+    var alertStats by remember { mutableStateOf(DoctorAlertStats(0, 0, 0)) }
 
     fun loadPatients() {
         if (isLoading) return
@@ -132,6 +141,21 @@ private fun DoctorPatientsScreen(refreshOnStart: Boolean) {
         loadPatients()
     }
 
+    LaunchedEffect(patients) {
+        if (alertPatient == null) {
+            alertPatient = patients.firstOrNull()
+        }
+    }
+
+    LaunchedEffect(alertPatient?.id) {
+        val patientId = alertPatient?.id ?: return@LaunchedEffect
+        val from = LocalDate.now().minusDays(30).format(DateTimeFormatter.ISO_DATE)
+        val to = LocalDate.now().format(DateTimeFormatter.ISO_DATE)
+        alertStats = withContext(Dispatchers.IO) {
+            fetchAlertStats(patientId, from, to)
+        }
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -150,9 +174,12 @@ private fun DoctorPatientsScreen(refreshOnStart: Boolean) {
         Scaffold(
             containerColor = PatientsBackground,
             bottomBar = {
-                DoctorBottomNav(
-                    selected = selectedTab,
-                    onSelect = { selectedTab = it }
+                AppBottomNav(
+                    current = BottomNavDestination.DASHBOARD,
+                    modifier = Modifier,
+                    indicatorColor = PatientsAccentSoft,
+                    selectedColor = PatientsHeader,
+                    unselectedColor = PatientsMuted.copy(alpha = 0.5f)
                 )
             }
         ) { innerPadding ->
@@ -210,7 +237,11 @@ private fun DoctorPatientsScreen(refreshOnStart: Boolean) {
                         tint = Color(0xFF2E7BD8),
                         background = Color(0xFFE8F1FF),
                         modifier = Modifier.weight(1f),
-                        onClick = { }
+                        onClick = {
+                            context.startActivity(
+                                android.content.Intent(context, CalendarActivity::class.java)
+                            )
+                        }
                     )
                 }
             }
@@ -223,7 +254,11 @@ private fun DoctorPatientsScreen(refreshOnStart: Boolean) {
                         tint = Color(0xFFD39C39),
                         background = Color(0xFFFFF4D9),
                         modifier = Modifier.weight(1f),
-                        onClick = { }
+                        onClick = {
+                            context.startActivity(
+                                android.content.Intent(context, ReportsActivity::class.java)
+                            )
+                        }
                     )
                     QuickActionCard(
                         title = "Nuevo Doctor",
@@ -244,11 +279,27 @@ private fun DoctorPatientsScreen(refreshOnStart: Boolean) {
                 SectionHeader(title = "Alertas Activas", actionLabel = "Ver todas")
             }
 
+            if (patients.isNotEmpty()) {
+                item {
+                    PatientPickerCard(
+                        label = "Paciente",
+                        patients = patients,
+                        selected = alertPatient,
+                        expanded = alertExpanded,
+                        onExpandedChange = { alertExpanded = it },
+                        onSelect = { patient ->
+                            alertPatient = patient
+                            alertExpanded = false
+                        }
+                    )
+                }
+            }
+
             item {
                 AlertCard(
-                    title = "María García — Presión Alta",
-                    subtitle = "160/95 mmHg detectado por dispositivo IoT",
-                    time = "hace 5 minutos",
+                    title = "Críticas",
+                    subtitle = "${alertStats.critical} alertas críticas en 30 días",
+                    time = "Últimos 30 días",
                     accent = PatientsDanger,
                     background = PatientsDangerSoft
                 )
@@ -256,19 +307,41 @@ private fun DoctorPatientsScreen(refreshOnStart: Boolean) {
 
             item {
                 AlertCard(
-                    title = "Carlos López — SpO2 Bajo",
-                    subtitle = "94% de saturación de oxígeno",
-                    time = "hace 20 minutos",
+                    title = "En observación",
+                    subtitle = "${alertStats.warning} alertas de seguimiento",
+                    time = "Últimos 30 días",
                     accent = PatientsWarning,
                     background = PatientsWarningSoft
                 )
             }
 
             item {
-                SectionHeader(title = "Mis Pacientes", actionLabel = "Ver todos")
+                SectionHeader(
+                    title = "Mis Pacientes",
+                    actionLabel = "Ver todos",
+                    onActionClick = {
+                        context.startActivity(
+                            android.content.Intent(context, DoctorPatientsListActivity::class.java)
+                        )
+                    }
+                )
             }
 
-                items(mockDoctorPatients()) { patient ->
+                val cards = patients.map { patient ->
+                    DoctorPatientUi(
+                        id = patient.id,
+                        name = patient.fullName.orEmpty().ifBlank { patient.email },
+                        email = patient.email,
+                        detail = "Paciente activo",
+                        initials = initialsOf(patient.fullName.orEmpty().ifBlank { patient.email }),
+                        avatarColor = Color(0xFFE6F3EC),
+                        initialsColor = PatientsHeader,
+                        status = if (patient.isActive) "Activo" else "Inactivo",
+                        statusColor = if (patient.isActive) PatientsHeader else PatientsMuted,
+                        statusBackground = if (patient.isActive) Color(0xFFE5F4EA) else Color(0xFFF1F1F1)
+                    )
+                }
+                items(cards) { patient ->
                     DoctorPatientCard(patient = patient)
                 }
             }
@@ -370,7 +443,7 @@ private fun DividerLine() {
 }
 
 @Composable
-private fun SectionHeader(title: String, actionLabel: String? = null) {
+private fun SectionHeader(title: String, actionLabel: String? = null, onActionClick: (() -> Unit)? = null) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -378,7 +451,13 @@ private fun SectionHeader(title: String, actionLabel: String? = null) {
     ) {
         Text(title, color = PatientsText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         if (actionLabel != null) {
-            Text(actionLabel, color = PatientsHeader, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                actionLabel,
+                color = PatientsHeader,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = if (onActionClick != null) Modifier.clickable { onActionClick() } else Modifier
+            )
         }
     }
 }
@@ -473,6 +552,7 @@ private fun DoctorPatientCard(patient: DoctorPatientUi) {
         Button(
             onClick = {
                 val intent = android.content.Intent(context, DoctorPatientProfileActivity::class.java).apply {
+                    putExtra("patient_id", patient.id)
                     putExtra("patient_name", patient.name)
                     putExtra("patient_email", patient.email)
                     putExtra("patient_initials", patient.initials)
@@ -520,57 +600,111 @@ private fun DoctorPatientCard(patient: DoctorPatientUi) {
     }
 }
 
-@Composable
-private fun DoctorBottomNav(
-    selected: Int,
-    onSelect: (Int) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .navigationBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        DoctorNavItem("Inicio", Icons.Outlined.CalendarToday, selected == 0) { onSelect(0) }
-        DoctorNavItem("Pacientes", Icons.Outlined.Person, selected == 1) { onSelect(1) }
-        DoctorNavItem("Calendario", Icons.Outlined.CalendarToday, selected == 2) { onSelect(2) }
-        DoctorNavItem("Reportes", Icons.Outlined.Description, selected == 3) { onSelect(3) }
-    }
+private fun initialsOf(name: String): String {
+    val parts = name.trim().split(" ").filter { it.isNotBlank() }
+    if (parts.isEmpty()) return "?"
+    if (parts.size == 1) return parts.first().take(2).uppercase()
+    return (parts.first().take(1) + parts.last().take(1)).uppercase()
 }
 
 @Composable
-private fun DoctorNavItem(
+private fun PatientPickerCard(
     label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit
+    patients: List<UserProfile>,
+    selected: UserProfile?,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onSelect: (UserProfile) -> Unit
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFFE5F4EA),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
     ) {
-        Box(
+        Column(
             modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(if (selected) PatientsHeader else Color.Transparent)
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            IconButton(onClick = onClick, modifier = Modifier.fillMaxSize()) {
-                Icon(icon, contentDescription = label, tint = if (selected) Color.White else PatientsMuted)
+            Text(label, color = PatientsHeader, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            Box {
+                OutlinedTextField(
+                    value = selected?.fullName ?: "Selecciona paciente",
+                    onValueChange = {},
+                    readOnly = true,
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFD3EBDD)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = (selected?.fullName ?: "P").take(1),
+                                color = PatientsHeader,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { onExpandedChange(true) }) {
+                            Icon(Icons.Filled.Menu, contentDescription = "Select", tint = PatientsHeader)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { onExpandedChange(false) }
+                ) {
+                    patients.forEach { patient ->
+                        DropdownMenuItem(
+                            text = { Text(patient.fullName ?: patient.email) },
+                            onClick = { onSelect(patient) }
+                        )
+                    }
+                }
             }
         }
-        Text(label, color = if (selected) PatientsHeader else PatientsMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
-private data class PatientsResult(val patients: List<UserProfile>, val error: String?)
+private data class DoctorAlertStats(val critical: Int, val warning: Int, val total: Int)
+
+private fun fetchAlertStats(patientId: String, from: String, to: String): DoctorAlertStats {
+    val token = PatientSession.accessToken
+    if (token.isNullOrBlank()) return DoctorAlertStats(0, 0, 0)
+    val url = URL("https://analytics-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients/$patientId/alerts/stats?from=$from&to=$to")
+    return try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10000
+            readTimeout = 10000
+            setRequestProperty("Authorization", "Bearer $token")
+        }
+        val code = conn.responseCode
+        val body = readStream(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+        if (code !in 200..299 || body.isBlank()) return DoctorAlertStats(0, 0, 0)
+        val json = JSONObject(body)
+        val critical = json.optInt("critical", json.optInt("high", 0))
+        val warning = json.optInt("warning", json.optInt("medium", 0))
+        val total = json.optInt("total", json.optInt("count", critical + warning))
+        DoctorAlertStats(critical, warning, total)
+    } catch (_: Exception) {
+        DoctorAlertStats(0, 0, 0)
+    }
+}
+
+private data class DoctorPatientsResult(val patients: List<UserProfile>, val error: String?)
 
 private data class CreateResult(val success: Boolean, val message: String)
 
 private data class DoctorPatientUi(
+    val id: String,
     val name: String,
     val email: String,
     val detail: String,
@@ -585,7 +719,7 @@ private data class DoctorPatientUi(
 private fun mockDoctorPatients(): List<DoctorPatientUi> {
     return listOf(
         DoctorPatientUi(
-            name = "María García",
+            id = "", name = "María García",
             email = "maria.garcia@email.com",
             detail = "2 dispositivos · 1 cuidador",
             initials = "MG",
@@ -596,7 +730,7 @@ private fun mockDoctorPatients(): List<DoctorPatientUi> {
             statusBackground = Color(0xFFFFE7E7)
         ),
         DoctorPatientUi(
-            name = "Carlos López",
+            id = "", name = "Carlos López",
             email = "carlos.lopez@email.com",
             detail = "1 dispositivo · 2 cuidadores",
             initials = "CL",
@@ -607,7 +741,7 @@ private fun mockDoctorPatients(): List<DoctorPatientUi> {
             statusBackground = Color(0xFFFFF1D6)
         ),
         DoctorPatientUi(
-            name = "Juan Pérez",
+            id = "", name = "Juan Pérez",
             email = "juan.perez@email.com",
             detail = "1 dispositivo · 0 cuidadores",
             initials = "JP",
@@ -704,10 +838,10 @@ private fun CreateUserDialog(
     )
 }
 
-private fun fetchPatients(): PatientsResult {
+private fun fetchPatients(): DoctorPatientsResult {
     val token = PatientSession.accessToken
     if (token.isNullOrBlank()) {
-        return PatientsResult(emptyList(), "Missing access token")
+        return DoctorPatientsResult(emptyList(), "Missing access token")
     }
     val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients")
     return try {
@@ -721,7 +855,7 @@ private fun fetchPatients(): PatientsResult {
         val body = readStream(if (code in 200..299) conn.inputStream else conn.errorStream)
         conn.disconnect()
         if (code !in 200..299) {
-            return PatientsResult(emptyList(), body.ifBlank { "Request failed (HTTP $code)" })
+            return DoctorPatientsResult(emptyList(), body.ifBlank { "Request failed (HTTP $code)" })
         }
         val json = JSONObject(body)
         val array = json.optJSONArray("patients")
@@ -743,9 +877,9 @@ private fun fetchPatients(): PatientsResult {
                 )
             }
         }
-        PatientsResult(list, null)
+        DoctorPatientsResult(list, null)
     } catch (e: Exception) {
-        PatientsResult(emptyList(), e.message ?: "Network error")
+        DoctorPatientsResult(emptyList(), e.message ?: "Network error")
     }
 }
 

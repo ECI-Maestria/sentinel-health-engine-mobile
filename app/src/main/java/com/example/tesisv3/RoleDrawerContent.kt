@@ -202,7 +202,7 @@ fun handleDrawerNavigation(context: Context, destination: DrawerDestination) {
         DrawerDestination.SETTINGS -> context.startActivity(Intent(context, SettingsActivity::class.java))
         DrawerDestination.DOCTOR_PANEL -> context.startActivity(Intent(context, DoctorPatientsActivity::class.java))
         DrawerDestination.DOCTOR_CALENDAR -> context.startActivity(Intent(context, CalendarActivity::class.java))
-        DrawerDestination.DOCTOR_REPORTS -> Toast.makeText(context, "Reportes pronto", Toast.LENGTH_SHORT).show()
+        DrawerDestination.DOCTOR_REPORTS -> context.startActivity(Intent(context, ReportsActivity::class.java))
         DrawerDestination.LOGOUT -> performLogout(context)
     }
 }

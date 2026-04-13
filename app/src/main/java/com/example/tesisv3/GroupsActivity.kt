@@ -102,6 +102,10 @@ private fun GroupsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val isDoctor = PatientSession.currentUser?.role?.equals("DOCTOR", ignoreCase = true) == true
+    var patients by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
+    var selectedPatient by remember { mutableStateOf<UserProfile?>(null) }
+    var patientExpanded by remember { mutableStateOf(false) }
     var caretakers by remember { mutableStateOf<List<CaretakerUi>>(emptyList()) }
     var emailInput by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
@@ -113,8 +117,17 @@ private fun GroupsScreen(onBack: () -> Unit) {
         wearableConnected = withContext(Dispatchers.IO) { isWearableConnected(context) }
     }
     LaunchedEffect(Unit) {
-        caretakers = withContext(Dispatchers.IO) {
-            fetchCaretakers(PatientSession.patientId)
+        if (isDoctor) {
+            val result = withContext(Dispatchers.IO) { fetchPatientsList() }
+            patients = result
+            selectedPatient = result.firstOrNull()
+            selectedPatient?.let {
+                caretakers = withContext(Dispatchers.IO) { fetchCaretakers(it.id) }
+            }
+        } else {
+            caretakers = withContext(Dispatchers.IO) {
+                fetchCaretakers(PatientSession.patientId)
+            }
         }
     }
 
@@ -159,6 +172,27 @@ private fun GroupsScreen(onBack: () -> Unit) {
             ) {
                 item { GroupsTopBar(wearableConnected = wearableConnected, onMenu = { scope.launch { drawerState.open() } }) }
 
+                if (isDoctor) {
+                    item {
+                        PatientPickerCard(
+                            label = "Paciente",
+                            patients = patients,
+                            selected = selectedPatient,
+                            expanded = patientExpanded,
+                            onExpandedChange = { patientExpanded = it },
+                            onSelect = { patient ->
+                                selectedPatient = patient
+                                patientExpanded = false
+                                scope.launch {
+                                    caretakers = withContext(Dispatchers.IO) {
+                                        fetchCaretakers(patient.id)
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+
                 item {
                     InfoCard()
                 }
@@ -176,8 +210,13 @@ private fun GroupsScreen(onBack: () -> Unit) {
                             }
                             isSubmitting = true
                             scope.launch {
+                                val targetPatientId = if (isDoctor) {
+                                    selectedPatient?.id ?: PatientSession.patientId
+                                } else {
+                                    PatientSession.patientId
+                                }
                                 val result = withContext(Dispatchers.IO) {
-                                    linkCaretaker(PatientSession.patientId, emailInput.trim())
+                                    linkCaretaker(targetPatientId, emailInput.trim())
                                 }
                                 isSubmitting = false
                                 if (result.success) {
@@ -185,7 +224,7 @@ private fun GroupsScreen(onBack: () -> Unit) {
                                     messageSuccess = true
                                     emailInput = ""
                                     caretakers = withContext(Dispatchers.IO) {
-                                        fetchCaretakers(PatientSession.patientId)
+                                        fetchCaretakers(targetPatientId)
                                     }
                                 } else {
                                     message = result.message
@@ -242,14 +281,19 @@ private fun GroupsScreen(onBack: () -> Unit) {
                             caretaker = caretaker,
                             onUnlink = {
                                 scope.launch {
+                                    val targetPatientId = if (isDoctor) {
+                                        selectedPatient?.id ?: PatientSession.patientId
+                                    } else {
+                                        PatientSession.patientId
+                                    }
                                     val result = withContext(Dispatchers.IO) {
-                                        unlinkCaretaker(PatientSession.patientId, caretaker.caretakerId)
+                                        unlinkCaretaker(targetPatientId, caretaker.caretakerId)
                                     }
                                     if (result.success) {
                                         message = "Cuidador desvinculado"
                                         messageSuccess = true
                                         caretakers = withContext(Dispatchers.IO) {
-                                            fetchCaretakers(PatientSession.patientId)
+                                            fetchCaretakers(targetPatientId)
                                         }
                                     } else {
                                         message = result.message
@@ -538,4 +582,108 @@ private fun initialsOf(name: String): String {
     if (parts.isEmpty()) return "?"
     if (parts.size == 1) return parts.first().take(2).uppercase(Locale.US)
     return (parts.first().take(1) + parts.last().take(1)).uppercase(Locale.US)
+}
+
+private fun fetchPatientsList(): List<UserProfile> {
+    val token = PatientSession.accessToken
+    if (token.isNullOrBlank()) return emptyList()
+    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients")
+    return try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10000
+            readTimeout = 10000
+            setRequestProperty("Authorization", "Bearer $token")
+        }
+        val code = conn.responseCode
+        val body = readStreamString(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+        if (code !in 200..299 || body.isBlank()) return emptyList()
+        val json = JSONObject(body)
+        val array = json.optJSONArray("patients") ?: return emptyList()
+        val list = mutableListOf<UserProfile>()
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            list.add(
+                UserProfile(
+                    id = item.optString("id"),
+                    email = item.optString("email"),
+                    role = item.optString("role"),
+                    firstName = item.optString("firstName"),
+                    lastName = item.optString("lastName"),
+                    fullName = item.optString("fullName"),
+                    isActive = item.optBoolean("isActive", true),
+                    createdAt = item.optString("createdAt")
+                )
+            )
+        }
+        list
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+@Composable
+private fun PatientPickerCard(
+    label: String,
+    patients: List<UserProfile>,
+    selected: UserProfile?,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onSelect: (UserProfile) -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFFE5F4EA),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(label, color = GroupsNav, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            Box {
+                OutlinedTextField(
+                    value = selected?.fullName ?: "Selecciona paciente",
+                    onValueChange = {},
+                    readOnly = true,
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFD3EBDD)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = (selected?.fullName ?: "P").take(1),
+                                color = GroupsNav,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { onExpandedChange(true) }) {
+                            Icon(Icons.Filled.Menu, contentDescription = "Select", tint = GroupsNav)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                androidx.compose.material3.DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { onExpandedChange(false) }
+                ) {
+                    patients.forEach { patient ->
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text(patient.fullName ?: patient.email) },
+                            onClick = { onSelect(patient) }
+                        )
+                    }
+                }
+            }
+        }
+    }
 }

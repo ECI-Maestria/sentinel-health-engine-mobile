@@ -69,6 +69,18 @@
             tools:targetApi="n" />
 
         <activity
+            android:name=".DoctorPatientsListActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            tools:targetApi="n" />
+
+        <activity
+            android:name=".ReportsActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            tools:targetApi="n" />
+
+        <activity
             android:name=".CaretakerRegistrationActivity"
             android:exported="false"
             android:resizeableActivity="true"

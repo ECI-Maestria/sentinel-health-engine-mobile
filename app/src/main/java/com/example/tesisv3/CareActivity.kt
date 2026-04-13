@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MedicalServices
 import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -123,6 +124,10 @@ private fun CareScreen(onBack: () -> Unit) {
     var feedbackSuccess by remember { mutableStateOf(true) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val canEdit = PatientSession.currentUser?.role?.equals("PATIENT", ignoreCase = true) != true
+    val isDoctor = PatientSession.currentUser?.role?.equals("DOCTOR", ignoreCase = true) == true
+    var patients by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
+    var selectedPatient by remember { mutableStateOf<UserProfile?>(null) }
+    var patientExpanded by remember { mutableStateOf(false) }
 
     var showSheet by remember { mutableStateOf(false) }
     var editingItem by remember { mutableStateOf<ApiMedication?>(null) }
@@ -133,8 +138,19 @@ private fun CareScreen(onBack: () -> Unit) {
         wearableConnected = withContext(Dispatchers.IO) { isWearableConnected(context) }
     }
     LaunchedEffect(Unit) {
-        medications = withContext(Dispatchers.IO) {
-            fetchMedications(PatientSession.patientId)
+        if (isDoctor) {
+            val result = withContext(Dispatchers.IO) { fetchPatientsList() }
+            patients = result
+            selectedPatient = result.firstOrNull()
+            selectedPatient?.let {
+                medications = withContext(Dispatchers.IO) {
+                    fetchMedications(it.id)
+                }
+            }
+        } else {
+            medications = withContext(Dispatchers.IO) {
+                fetchMedications(PatientSession.patientId)
+            }
         }
     }
 
@@ -178,6 +194,27 @@ private fun CareScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item { CareTopBar(wearableConnected = wearableConnected, onMenu = { scope.launch { drawerState.open() } }) }
+
+                if (isDoctor) {
+                    item {
+                        PatientPickerCard(
+                            label = "Paciente",
+                            patients = patients,
+                            selected = selectedPatient,
+                            expanded = patientExpanded,
+                            onExpandedChange = { patientExpanded = it },
+                            onSelect = { patient ->
+                                selectedPatient = patient
+                                patientExpanded = false
+                                scope.launch {
+                                    medications = withContext(Dispatchers.IO) {
+                                        fetchMedications(patient.id)
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
 
             item {
                 Row(
@@ -246,16 +283,21 @@ private fun CareScreen(onBack: () -> Unit) {
                 existing = editingItem,
                 onSave = { newItem ->
                     scope.launch {
+                        val targetPatientId = if (isDoctor) {
+                            selectedPatient?.id ?: PatientSession.patientId
+                        } else {
+                            PatientSession.patientId
+                        }
                         val result = withContext(Dispatchers.IO) {
                             if (editingItem == null) {
-                                createMedication(PatientSession.patientId, newItem)
+                                createMedication(targetPatientId, newItem)
                             } else {
-                                updateMedication(PatientSession.patientId, newItem)
+                                updateMedication(targetPatientId, newItem)
                             }
                         }
                         if (result.success) {
                             medications = withContext(Dispatchers.IO) {
-                                fetchMedications(PatientSession.patientId)
+                                fetchMedications(targetPatientId)
                             }
                             feedbackMessage = if (editingItem == null) "Medicamento creado" else "Medicamento actualizado"
                             feedbackSuccess = true
@@ -281,12 +323,17 @@ private fun CareScreen(onBack: () -> Unit) {
                         onClick = {
                             item?.let { med ->
                                 scope.launch {
+                                    val targetPatientId = if (isDoctor) {
+                                        selectedPatient?.id ?: PatientSession.patientId
+                                    } else {
+                                        PatientSession.patientId
+                                    }
                                     val result = withContext(Dispatchers.IO) {
-                                        deleteMedication(PatientSession.patientId, med.id)
+                                        deleteMedication(targetPatientId, med.id)
                                     }
                                     if (result.success) {
                                         medications = withContext(Dispatchers.IO) {
-                                            fetchMedications(PatientSession.patientId)
+                                            fetchMedications(targetPatientId)
                                         }
                                         feedbackMessage = "Medicamento eliminado"
                                         feedbackSuccess = true
@@ -312,8 +359,7 @@ private fun CareScreen(onBack: () -> Unit) {
             feedbackMessage = null
         }
     }
-}
-
+    }
 }
 
 @Composable
@@ -342,6 +388,71 @@ private fun CareTopBar(wearableConnected: Boolean?, onMenu: () -> Unit) {
                 context.startActivity(Intent(context, NotificationsActivity::class.java))
             }) {
                 Icon(Icons.Outlined.NotificationsNone, contentDescription = "Notifications", tint = CareNav)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PatientPickerCard(
+    label: String,
+    patients: List<UserProfile>,
+    selected: UserProfile?,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onSelect: (UserProfile) -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFFE5F4EA),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(label, color = CareNav, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            Box {
+                OutlinedTextField(
+                    value = selected?.fullName ?: "Selecciona paciente",
+                    onValueChange = {},
+                    readOnly = true,
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFD3EBDD)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = (selected?.fullName ?: "P").take(1),
+                                color = CareNav,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { onExpandedChange(true) }) {
+                            Icon(Icons.Filled.Menu, contentDescription = "Select", tint = CareNav)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { onExpandedChange(false) }
+                ) {
+                    patients.forEach { patient ->
+                        DropdownMenuItem(
+                            text = { Text(patient.fullName.orEmpty()) },
+                            onClick = { onSelect(patient) }
+                        )
+                    }
+                }
             }
         }
     }
@@ -540,6 +651,45 @@ private fun buildMedicationPayload(medication: ApiMedication): String {
         "endDate":"${escapeJson(medication.endDate)}",
         "notes":"${escapeJson(medication.notes)}"
     }""".trimIndent()
+}
+
+private fun fetchPatientsList(): List<UserProfile> {
+    val token = PatientSession.accessToken
+    if (token.isNullOrBlank()) return emptyList()
+    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients")
+    return try {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10000
+            readTimeout = 10000
+            setRequestProperty("Authorization", "Bearer $token")
+        }
+        val code = conn.responseCode
+        val body = readStreamString(if (code in 200..299) conn.inputStream else conn.errorStream)
+        conn.disconnect()
+        if (code !in 200..299) return emptyList()
+        val json = JSONObject(body)
+        val array = json.optJSONArray("patients") ?: return emptyList()
+        val list = mutableListOf<UserProfile>()
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            list.add(
+                UserProfile(
+                    id = item.optString("id"),
+                    email = item.optString("email"),
+                    role = item.optString("role"),
+                    firstName = item.optString("firstName"),
+                    lastName = item.optString("lastName"),
+                    fullName = item.optString("fullName"),
+                    isActive = item.optBoolean("isActive", true),
+                    createdAt = item.optString("createdAt")
+                )
+            )
+        }
+        list
+    } catch (_: Exception) {
+        emptyList()
+    }
 }
 
 private fun readStreamString(stream: java.io.InputStream?): String {
