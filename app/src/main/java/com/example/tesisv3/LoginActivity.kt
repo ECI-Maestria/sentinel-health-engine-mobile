@@ -104,6 +104,9 @@ class LoginActivity : ComponentActivity() {
                             LoginDestination.CARETAKER_NO_PATIENTS -> {
                                 startActivity(Intent(this, CaretakerNoPatientsActivity::class.java))
                             }
+                            LoginDestination.CARETAKER_WITH_PATIENTS -> {
+                                startActivity(Intent(this, DoctorPatientsActivity::class.java))
+                            }
                         }
                         finish()
                     }
@@ -307,9 +310,8 @@ private fun LoginScreen(onLoginDestination: (LoginDestination) -> Unit) {
                                             if (patients.isEmpty()) {
                                                 onLoginDestination(LoginDestination.CARETAKER_NO_PATIENTS)
                                             } else {
-                                                // Link session to first assigned patient
                                                 PatientSession.patientId = patients.first()
-                                                onLoginDestination(LoginDestination.DASHBOARD)
+                                                onLoginDestination(LoginDestination.CARETAKER_WITH_PATIENTS)
                                             }
                                         }
                                         else -> {
@@ -397,7 +399,8 @@ private fun LoginScreen(onLoginDestination: (LoginDestination) -> Unit) {
 private enum class LoginDestination {
     DASHBOARD,
     DOCTOR,
-    CARETAKER_NO_PATIENTS
+    CARETAKER_NO_PATIENTS,
+    CARETAKER_WITH_PATIENTS
 }
 
 private data class LoginResult(val success: Boolean, val message: String)

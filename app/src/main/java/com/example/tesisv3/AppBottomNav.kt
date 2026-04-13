@@ -115,14 +115,19 @@ fun AppBottomNav(
                         }
                     } else if (caretakerClick) {
                         when (dest) {
-                            BottomNavDestination.DASHBOARD, BottomNavDestination.GROUPS -> {
-                                context.startActivity(Intent(context, GroupsActivity::class.java))
+                            BottomNavDestination.DASHBOARD -> {
+                                context.startActivity(Intent(context, DoctorPatientsActivity::class.java))
                             }
-                            BottomNavDestination.CALENDAR,
-                            BottomNavDestination.CARE,
-                            BottomNavDestination.REPORTS -> {
-                                Toast.makeText(context, "Disponible solo para pacientes", Toast.LENGTH_SHORT).show()
+                            BottomNavDestination.GROUPS -> {
+                                context.startActivity(Intent(context, DoctorPatientsListActivity::class.java))
                             }
+                            BottomNavDestination.CALENDAR -> {
+                                context.startActivity(Intent(context, CalendarActivity::class.java))
+                            }
+                            BottomNavDestination.CARE -> {
+                                context.startActivity(Intent(context, CareActivity::class.java))
+                            }
+                            BottomNavDestination.REPORTS -> { /* caretaker never sees this tab */ }
                         }
                     } else {
                         when (dest) {

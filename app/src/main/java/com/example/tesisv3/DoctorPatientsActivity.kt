@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -213,70 +214,74 @@ private fun DoctorPatientsScreen(refreshOnStart: Boolean) {
                 )
             }
 
-            item {
-                SectionHeader(title = "Acciones Rápidas")
-            }
+            val isCaretaker = PatientSession.currentUser?.role?.equals("CARETAKER", ignoreCase = true) == true
 
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    QuickActionCard(
-                        title = "Nuevo Paciente",
-                        icon = Icons.Outlined.PersonAddAlt1,
-                        tint = PatientsHeader,
-                        background = PatientsAccentSoft,
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            context.startActivity(
-                                android.content.Intent(context, PatientRegistrationActivity::class.java)
-                            )
-                        }
-                    )
-                    QuickActionCard(
-                        title = "Agendar Cita",
-                        icon = Icons.Outlined.CalendarToday,
-                        tint = Color(0xFF2E7BD8),
-                        background = Color(0xFFE8F1FF),
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            context.startActivity(
-                                android.content.Intent(context, CalendarActivity::class.java)
-                            )
-                        }
-                    )
+            if (!isCaretaker) {
+                item {
+                    SectionHeader(title = "Acciones Rápidas")
+                }
+
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        QuickActionCard(
+                            title = "Nuevo Paciente",
+                            icon = Icons.Outlined.PersonAddAlt1,
+                            tint = PatientsHeader,
+                            background = PatientsAccentSoft,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                context.startActivity(
+                                    android.content.Intent(context, PatientRegistrationActivity::class.java)
+                                )
+                            }
+                        )
+                        QuickActionCard(
+                            title = "Agendar Cita",
+                            icon = Icons.Outlined.CalendarToday,
+                            tint = Color(0xFF2E7BD8),
+                            background = Color(0xFFE8F1FF),
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                context.startActivity(
+                                    android.content.Intent(context, CalendarActivity::class.java)
+                                )
+                            }
+                        )
+                    }
+                }
+
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        QuickActionCard(
+                            title = "Generar Reporte",
+                            icon = Icons.Outlined.Description,
+                            tint = Color(0xFFD39C39),
+                            background = Color(0xFFFFF4D9),
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                context.startActivity(
+                                    android.content.Intent(context, ReportsActivity::class.java)
+                                )
+                            }
+                        )
+                        QuickActionCard(
+                            title = "Nuevo Doctor",
+                            icon = Icons.Outlined.Person,
+                            tint = Color(0xFF7B5CE7),
+                            background = Color(0xFFF0E9FF),
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                context.startActivity(
+                                    android.content.Intent(context, DoctorRegistrationActivity::class.java)
+                                )
+                            }
+                        )
                 }
             }
-
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    QuickActionCard(
-                        title = "Generar Reporte",
-                        icon = Icons.Outlined.Description,
-                        tint = Color(0xFFD39C39),
-                        background = Color(0xFFFFF4D9),
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            context.startActivity(
-                                android.content.Intent(context, ReportsActivity::class.java)
-                            )
-                        }
-                    )
-                    QuickActionCard(
-                        title = "Nuevo Doctor",
-                        icon = Icons.Outlined.Person,
-                        tint = Color(0xFF7B5CE7),
-                        background = Color(0xFFF0E9FF),
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            context.startActivity(
-                                android.content.Intent(context, DoctorRegistrationActivity::class.java)
-                            )
-                        }
-                    )
-                }
             }
 
             item {
-                SectionHeader(title = "Alertas Activas", actionLabel = "Ver todas")
+                SectionHeader(title = "Alertas Activas")
             }
 
             if (patients.isNotEmpty()) {
@@ -843,9 +848,14 @@ private fun fetchPatients(): DoctorPatientsResult {
     if (token.isNullOrBlank()) {
         return DoctorPatientsResult(emptyList(), "Missing access token")
     }
-    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients")
+    val isCaretaker = PatientSession.currentUser?.role?.equals("CARETAKER", ignoreCase = true) == true
+    val urlStr = if (isCaretaker) {
+        "https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/caretakers/me/patients"
+    } else {
+        "https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients"
+    }
     return try {
-        val conn = (url.openConnection() as HttpURLConnection).apply {
+        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 10000
             readTimeout = 10000
@@ -857,24 +867,51 @@ private fun fetchPatients(): DoctorPatientsResult {
         if (code !in 200..299) {
             return DoctorPatientsResult(emptyList(), body.ifBlank { "Request failed (HTTP $code)" })
         }
-        val json = JSONObject(body)
-        val array = json.optJSONArray("patients")
         val list = mutableListOf<UserProfile>()
-        if (array != null) {
-            for (i in 0 until array.length()) {
-                val item = array.optJSONObject(i) ?: continue
+        if (isCaretaker) {
+            val arr = when {
+                body.trimStart().startsWith("[") -> JSONArray(body)
+                else -> JSONObject(body).let { o ->
+                    o.optJSONArray("patients") ?: o.optJSONArray("data") ?: JSONArray()
+                }
+            }
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                // Patient fields may be in a nested "patient" object or directly on item
+                val p = item.optJSONObject("patient") ?: item
+                val id = item.optString("patientId").ifBlank { p.optString("id") }
+                if (id.isBlank()) continue
                 list.add(
                     UserProfile(
-                        id = item.optString("id"),
-                        email = item.optString("email"),
-                        role = item.optString("role"),
-                        firstName = item.optString("firstName"),
-                        lastName = item.optString("lastName"),
-                        fullName = item.optString("fullName"),
-                        isActive = item.optBoolean("isActive", true),
-                        createdAt = item.optString("createdAt")
+                        id = id,
+                        email = p.optString("email"),
+                        role = p.optString("role"),
+                        firstName = p.optString("firstName"),
+                        lastName = p.optString("lastName"),
+                        fullName = p.optString("fullName").ifBlank { null },
+                        isActive = p.optBoolean("isActive", true),
+                        createdAt = p.optString("createdAt")
                     )
                 )
+            }
+        } else {
+            val array = JSONObject(body).optJSONArray("patients")
+            if (array != null) {
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    list.add(
+                        UserProfile(
+                            id = item.optString("id"),
+                            email = item.optString("email"),
+                            role = item.optString("role"),
+                            firstName = item.optString("firstName"),
+                            lastName = item.optString("lastName"),
+                            fullName = item.optString("fullName"),
+                            isActive = item.optBoolean("isActive", true),
+                            createdAt = item.optString("createdAt")
+                        )
+                    )
+                }
             }
         }
         DoctorPatientsResult(list, null)

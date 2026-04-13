@@ -25,7 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -62,8 +61,6 @@ import java.net.URL
 import org.json.JSONArray
 import org.json.JSONObject
 
-// ── Colors ────────────────────────────────────────────────────────────────────
-
 private val NpBackground  = Color(0xFFF0F4EF)
 private val NpText        = Color(0xFF1A2E20)
 private val NpMuted       = Color(0xFF7A8C7E)
@@ -74,8 +71,6 @@ private val NpWarnBg      = Color(0xFFFFF8E1)
 private val NpWarnIcon    = Color(0xFFFF8F00)
 private val NpCard        = Color.White
 private val NpNav         = Color(0xFF58725E)
-
-// ── Activity ──────────────────────────────────────────────────────────────────
 
 class CaretakerNoPatientsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -94,7 +89,7 @@ class CaretakerNoPatientsActivity : ComponentActivity() {
                         startActivity(intent)
                     },
                     onPatientsFound = {
-                        startActivity(Intent(this, DashboardActivity::class.java))
+                        startActivity(Intent(this, DoctorPatientsActivity::class.java))
                         finish()
                     }
                 )
@@ -102,8 +97,6 @@ class CaretakerNoPatientsActivity : ComponentActivity() {
         }
     }
 }
-
-// ── Screen ────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun CaretakerNoPatientsScreen(
@@ -131,17 +124,11 @@ private fun CaretakerNoPatientsScreen(
             verticalArrangement = Arrangement.spacedBy(0.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── Top bar ───────────────────────────────────────────────────────
             item {
-                NpTopBar(
-                    onNotifications = {
-                        context.startActivity(Intent(context, NotificationsActivity::class.java))
-                    }
-                )
+                NpTopBar()
                 Spacer(Modifier.height(48.dp))
             }
 
-            // ── Warning icon ──────────────────────────────────────────────────
             item {
                 Box(
                     modifier = Modifier
@@ -160,7 +147,6 @@ private fun CaretakerNoPatientsScreen(
                 Spacer(Modifier.height(28.dp))
             }
 
-            // ── Title + subtitle ──────────────────────────────────────────────
             item {
                 Text(
                     text = "No estás vinculado a ningún paciente",
@@ -183,7 +169,6 @@ private fun CaretakerNoPatientsScreen(
                 Spacer(Modifier.height(32.dp))
             }
 
-            // ── How-to card ───────────────────────────────────────────────────
             item {
                 Surface(
                     shape = RoundedCornerShape(18.dp),
@@ -221,7 +206,6 @@ private fun CaretakerNoPatientsScreen(
                 Spacer(Modifier.height(28.dp))
             }
 
-            // ── Email display ─────────────────────────────────────────────────
             item {
                 Row(horizontalArrangement = Arrangement.Center) {
                     Text("Tu correo: ", color = NpMuted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -230,7 +214,6 @@ private fun CaretakerNoPatientsScreen(
                 Spacer(Modifier.height(32.dp))
             }
 
-            // ── Refresh button ────────────────────────────────────────────────
             item {
                 if (checkMessage != null) {
                     Text(
@@ -292,15 +275,13 @@ private fun CaretakerNoPatientsScreen(
     }
 }
 
-// ── Top bar ───────────────────────────────────────────────────────────────────
-
 @Composable
-private fun NpTopBar(onNotifications: () -> Unit) {
+private fun NpTopBar() {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Left placeholder to keep title centered
+        // Placeholders on both sides to keep title perfectly centered
         Box(modifier = Modifier.size(48.dp))
 
         Column(
@@ -322,17 +303,10 @@ private fun NpTopBar(onNotifications: () -> Unit) {
             )
         }
 
-        IconButton(onClick = onNotifications) {
-            Icon(
-                Icons.Outlined.NotificationsNone,
-                contentDescription = "Notificaciones",
-                tint = NpNav
-            )
-        }
+        Box(modifier = Modifier.size(48.dp))
     }
 }
 
-// ── Step row ──────────────────────────────────────────────────────────────────
 
 @Composable
 private fun HowToStep(number: Int, text: String) {
@@ -362,9 +336,6 @@ private fun HowToStep(number: Int, text: String) {
     }
 }
 
-// ── API ───────────────────────────────────────────────────────────────────────
-
-/** Returns list of patientIds linked to the current caretaker. Empty = none linked. */
 fun fetchCaretakerPatientIds(): List<String> {
     val token = PatientSession.accessToken ?: return emptyList()
     val url = URL(
@@ -386,7 +357,6 @@ fun fetchCaretakerPatientIds(): List<String> {
         conn.disconnect()
         if (code !in 200..299 || body.isBlank()) return emptyList()
 
-        // Handle both array root and object with "patients" key
         val ids = mutableListOf<String>()
         try {
             val arr = when {

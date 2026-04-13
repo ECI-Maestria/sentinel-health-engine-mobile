@@ -66,6 +66,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -430,9 +431,14 @@ private fun fetchPatients(): DoctorListPatientsResult {
     if (token.isNullOrBlank()) {
         return DoctorListPatientsResult(emptyList(), "Missing access token")
     }
-    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients")
+    val isCaretaker = PatientSession.currentUser?.role?.equals("CARETAKER", ignoreCase = true) == true
+    val urlStr = if (isCaretaker) {
+        "https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/caretakers/me/patients"
+    } else {
+        "https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients"
+    }
     return try {
-        val conn = (url.openConnection() as HttpURLConnection).apply {
+        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 10000
             readTimeout = 10000
@@ -444,24 +450,51 @@ private fun fetchPatients(): DoctorListPatientsResult {
         if (code !in 200..299) {
             return DoctorListPatientsResult(emptyList(), body.ifBlank { "Request failed (HTTP $code)" })
         }
-        val json = JSONObject(body)
-        val array = json.optJSONArray("patients")
         val list = mutableListOf<UserProfile>()
-        if (array != null) {
-            for (i in 0 until array.length()) {
-                val item = array.optJSONObject(i) ?: continue
+        if (isCaretaker) {
+            // Response: JSON array or object with "patients"/"data" key
+            val arr = when {
+                body.trimStart().startsWith("[") -> JSONArray(body)
+                else -> JSONObject(body).let { o ->
+                    o.optJSONArray("patients") ?: o.optJSONArray("data") ?: JSONArray()
+                }
+            }
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                val p = item.optJSONObject("patient") ?: item
+                val id = item.optString("patientId").ifBlank { p.optString("id") }
+                if (id.isBlank()) continue
                 list.add(
                     UserProfile(
-                        id = item.optString("id"),
-                        email = item.optString("email"),
-                        role = item.optString("role"),
-                        firstName = item.optString("firstName"),
-                        lastName = item.optString("lastName"),
-                        fullName = item.optString("fullName"),
-                        isActive = item.optBoolean("isActive", true),
-                        createdAt = item.optString("createdAt")
+                        id = id,
+                        email = p.optString("email"),
+                        role = p.optString("role"),
+                        firstName = p.optString("firstName"),
+                        lastName = p.optString("lastName"),
+                        fullName = p.optString("fullName").ifBlank { null },
+                        isActive = p.optBoolean("isActive", true),
+                        createdAt = p.optString("createdAt")
                     )
                 )
+            }
+        } else {
+            val array = JSONObject(body).optJSONArray("patients")
+            if (array != null) {
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    list.add(
+                        UserProfile(
+                            id = item.optString("id"),
+                            email = item.optString("email"),
+                            role = item.optString("role"),
+                            firstName = item.optString("firstName"),
+                            lastName = item.optString("lastName"),
+                            fullName = item.optString("fullName"),
+                            isActive = item.optBoolean("isActive", true),
+                            createdAt = item.optString("createdAt")
+                        )
+                    )
+                }
             }
         }
         DoctorListPatientsResult(list, null)

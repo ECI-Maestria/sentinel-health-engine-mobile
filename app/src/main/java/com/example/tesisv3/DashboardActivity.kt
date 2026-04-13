@@ -140,7 +140,7 @@ private data class VitalHistoryPoint(
 
 private data class HistoryDebugInfo(
     val requestUrl: String,
-    val httpCode: Int,       // 0 = never reached, -1 = exception before connect
+    val httpCode: Int,
     val rawResponse: String,
     val exception: String?,
     val points: List<VitalHistoryPoint>
@@ -245,7 +245,6 @@ private fun DashboardScreen(onBack: () -> Unit, liveVitals: MutableState<DashVit
         val patientId = PatientSession.patientId
         val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
 
-        // Vitals: wearable data takes priority; fallback to API if no live data
         if (vitals == null) {
             val apiVitals = withContext(Dispatchers.IO) { fetchApiVitals(patientId) }
             if (vitals == null) vitals = apiVitals
@@ -347,7 +346,6 @@ private fun DashboardScreen(onBack: () -> Unit, liveVitals: MutableState<DashVit
         }
     }
 
-    // ── Debug modal ───────────────────────────────────────────────────────────
     if (showHistoryDebug) {
         val info = historyDebug
         AlertDialog(
@@ -364,7 +362,6 @@ private fun DashboardScreen(onBack: () -> Unit, liveVitals: MutableState<DashVit
                     if (info == null) {
                         Text("Aún sin datos. Espera a que termine la carga.", color = DashMuted)
                     } else {
-                        // Request
                         Text("REQUEST", color = DashGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text(
                             info.requestUrl,
@@ -375,7 +372,6 @@ private fun DashboardScreen(onBack: () -> Unit, liveVitals: MutableState<DashVit
                                 .background(DashGreenChip, RoundedCornerShape(8.dp))
                                 .padding(8.dp)
                         )
-                        // HTTP status
                         Text("HTTP STATUS", color = DashGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         val codeColor = when {
                             info.httpCode in 200..299 -> Color(0xFF2E7D32)
@@ -388,7 +384,6 @@ private fun DashboardScreen(onBack: () -> Unit, liveVitals: MutableState<DashVit
                             fontWeight = FontWeight.Bold,
                             color = codeColor
                         )
-                        // Exception (if any)
                         if (!info.exception.isNullOrBlank()) {
                             Text("EXCEPCIÓN", color = Color(0xFFD32F2F), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             Text(
@@ -401,7 +396,6 @@ private fun DashboardScreen(onBack: () -> Unit, liveVitals: MutableState<DashVit
                                     .padding(8.dp)
                             )
                         }
-                        // Raw response
                         Text("RESPONSE BODY", color = DashGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         val preview = if (info.rawResponse.isBlank()) "(vacío)"
                         else info.rawResponse.take(2000)
@@ -414,7 +408,6 @@ private fun DashboardScreen(onBack: () -> Unit, liveVitals: MutableState<DashVit
                                 .background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp))
                                 .padding(8.dp)
                         )
-                        // Points parsed
                         Text("PUNTOS PARSEADOS", color = DashGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text(
                             "${info.points.size} puntos  (HR: ${info.points.count { it.heartRate != null }}, SpO2: ${info.points.count { it.spO2 != null }})",
@@ -465,13 +458,14 @@ private fun DashTopBar(
                 fontWeight = FontWeight.Bold
             )
         }
-        // Watch status indicator
-        WatchStatusIcon(
-            wearableConnected = wearableConnected,
-            modifier = Modifier
-                .size(24.dp)
-                .padding(end = 2.dp)
-        )
+        if (PatientSession.currentUser?.role?.equals("PATIENT", ignoreCase = true) == true) {
+            WatchStatusIcon(
+                wearableConnected = wearableConnected,
+                modifier = Modifier
+                    .size(24.dp)
+                    .padding(end = 2.dp)
+            )
+        }
         IconButton(onClick = {
             context.startActivity(Intent(context, NotificationsActivity::class.java))
         }) {
@@ -805,7 +799,6 @@ private fun ReminderRow(reminder: DashReminder) {
     }
 }
 
-// ── Vitals history chart ──────────────────────────────────────────────────────
 
 private val ChartHrColor = Color(0xFF5BCB90)      // green  → FC
 private val ChartSpo2Color = Color(0xFF4A90D9)    // blue   → SpO2
@@ -924,7 +917,6 @@ private fun VitalsLineChart(rawPoints: List<VitalHistoryPoint>) {
         val cW = size.width - padL - padR
         val cH = size.height - padT - padB
 
-        // ── Y-ranges ──────────────────────────────────────────────────────────
         val hrVals = daily.mapNotNull { it.hr }
         val hrMin = if (hrVals.isEmpty()) 40 else (hrVals.min() - 10).coerceAtLeast(30)
         val hrMax = if (hrVals.isEmpty()) 180 else (hrVals.max() + 10)
@@ -935,19 +927,16 @@ private fun VitalsLineChart(rawPoints: List<VitalHistoryPoint>) {
         val sMax = if (sVals.isEmpty()) 100 else (sVals.max() + 1).coerceAtMost(102)
         val sRange = (sMax - sMin).coerceAtLeast(1).toFloat()
 
-        // ── Coordinate helpers ────────────────────────────────────────────────
         fun xOf(i: Int): Float = padL + (i.toFloat() / (n - 1).coerceAtLeast(1)) * cW
         fun yOfHr(v: Int): Float = padT + cH - ((v - hrMin) / hrRange) * cH
         fun yOfS(v: Int): Float = padT + cH - ((v - sMin) / sRange) * cH
 
-        // ── Chart background ──────────────────────────────────────────────────
         drawRect(
             color = Color(0xFFF7FAF8),
             topLeft = Offset(padL, padT),
             size = GeoSize(cW, cH)
         )
 
-        // ── Horizontal grid lines (4) ─────────────────────────────────────────
         repeat(5) { j ->
             val y = padT + cH * j / 4f
             drawLine(
@@ -958,7 +947,6 @@ private fun VitalsLineChart(rawPoints: List<VitalHistoryPoint>) {
             )
         }
 
-        // ── HR filled-area (semi-transparent) ────────────────────────────────
         val hrFill = Path()
         var first = true
         daily.forEachIndexed { i, dp ->
@@ -975,7 +963,6 @@ private fun VitalsLineChart(rawPoints: List<VitalHistoryPoint>) {
         }
         drawPath(hrFill, color = ChartHrColor.copy(alpha = 0.10f))
 
-        // ── SpO2 filled-area ──────────────────────────────────────────────────
         val sFill = Path()
         var sFirst = true
         daily.forEachIndexed { i, dp ->
@@ -992,7 +979,6 @@ private fun VitalsLineChart(rawPoints: List<VitalHistoryPoint>) {
         }
         drawPath(sFill, color = ChartSpo2Color.copy(alpha = 0.10f))
 
-        // ── HR line ───────────────────────────────────────────────────────────
         val hrLine = Path()
         var hrFirst = true
         daily.forEachIndexed { i, dp ->
@@ -1006,7 +992,6 @@ private fun VitalsLineChart(rawPoints: List<VitalHistoryPoint>) {
             style = Stroke(width = 2.2f * density, cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
 
-        // ── SpO2 line ─────────────────────────────────────────────────────────
         val sLine = Path()
         var sLineFirst = true
         daily.forEachIndexed { i, dp ->
@@ -1020,7 +1005,6 @@ private fun VitalsLineChart(rawPoints: List<VitalHistoryPoint>) {
             style = Stroke(width = 2.2f * density, cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
 
-        // ── Data dots ─────────────────────────────────────────────────────────
         daily.forEachIndexed { i, dp ->
             dp.hr?.let {
                 drawCircle(ChartHrColor, radius = 2.8f * density, center = Offset(xOf(i), yOfHr(it)))
@@ -1032,13 +1016,11 @@ private fun VitalsLineChart(rawPoints: List<VitalHistoryPoint>) {
             }
         }
 
-        // ── Text labels via nativeCanvas ──────────────────────────────────────
         val basePaint = android.graphics.Paint().apply {
             textSize = 23f
             isAntiAlias = true
         }
 
-        // Left Y-axis — FC (green)
         val hrPaint = android.graphics.Paint(basePaint).apply {
             color = android.graphics.Color.parseColor("#5BCB90")
             textAlign = android.graphics.Paint.Align.RIGHT
@@ -1049,7 +1031,6 @@ private fun VitalsLineChart(rawPoints: List<VitalHistoryPoint>) {
             drawContext.canvas.nativeCanvas.drawText(v.toString(), padL - 5f, y, hrPaint)
         }
 
-        // Right Y-axis — SpO2 (blue)
         val sPaint = android.graphics.Paint(basePaint).apply {
             color = android.graphics.Color.parseColor("#4A90D9")
             textAlign = android.graphics.Paint.Align.LEFT
@@ -1060,7 +1041,6 @@ private fun VitalsLineChart(rawPoints: List<VitalHistoryPoint>) {
             drawContext.canvas.nativeCanvas.drawText(v.toInt().toString(), padL + cW + 5f, y, sPaint)
         }
 
-        // X-axis — date labels (show ~5 evenly-spaced)
         val xPaint = android.graphics.Paint(basePaint).apply {
             color = android.graphics.Color.parseColor("#7B8D80")
             textAlign = android.graphics.Paint.Align.CENTER
@@ -1076,7 +1056,6 @@ private fun VitalsLineChart(rawPoints: List<VitalHistoryPoint>) {
     }
 }
 
-// ── API functions ─────────────────────────────────────────────────────────────
 
 private fun fetchApiVitals(patientId: String): DashVitals? {
     if (patientId.isBlank()) return null
@@ -1275,7 +1254,6 @@ private fun fetchVitalsHistory(patientId: String): HistoryDebugInfo {
         }
 
         val json = JSONObject(body)
-        // Try common root-array keys
         val arr = json.optJSONArray("readings")
             ?: json.optJSONArray("history")
             ?: json.optJSONArray("vitals")

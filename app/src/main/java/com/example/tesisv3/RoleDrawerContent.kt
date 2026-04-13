@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Group
@@ -23,11 +25,9 @@ import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.MedicalServices
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -38,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+// ── Destinations ──────────────────────────────────────────────────────────────
+
 enum class DrawerDestination {
     DASHBOARD,
     MEDICATIONS,
@@ -47,15 +49,29 @@ enum class DrawerDestination {
     SETTINGS,
     LOGOUT,
     DOCTOR_PANEL,
+    DOCTOR_PATIENTS,   // → DoctorPatientsListActivity
     DOCTOR_CALENDAR,
     DOCTOR_REPORTS
 }
 
-private val DrawerGreen = Color(0xFF2F8A5B)
-private val DrawerGreenSoft = Color(0xFFE6F3EC)
-private val DrawerText = Color(0xFF2E3F35)
-private val DrawerMuted = Color(0xFF7B8C81)
+// ── Role accent colors ────────────────────────────────────────────────────────
+
+private val AccentDoctor      = Color(0xFF2F8A5B)   // green
+private val AccentPatient     = Color(0xFF3B82F6)   // blue
+private val AccentCaretaker   = Color(0xFF1361A8)   // dark blue
+
+private val AccentDoctorSoft    = Color(0xFFE6F3EC)
+private val AccentPatientSoft   = Color(0xFFEBF3FF)
+private val AccentCaretakerSoft = Color(0xFFE3EDF8)
+
+private val AccentDoctorIcon    = Color(0xFFCDEBDA)
+private val AccentPatientIcon   = Color(0xFFD0E5FF)
+private val AccentCaretakerIcon = Color(0xFFCCDFF3)
+
+private val DrawerText    = Color(0xFF2E3F35)
 private val DrawerSurface = Color.White
+
+// ── RoleDrawerContent ─────────────────────────────────────────────────────────
 
 @Composable
 fun RoleDrawerContent(
@@ -63,17 +79,75 @@ fun RoleDrawerContent(
     current: DrawerDestination?,
     onItemClick: (DrawerDestination) -> Unit
 ) {
-    val isDoctor = role?.equals("DOCTOR", ignoreCase = true) == true
+    val isDoctor    = role?.equals("DOCTOR",    ignoreCase = true) == true
+    val isCaretaker = role?.equals("CARETAKER", ignoreCase = true) == true
+
     val name = PatientSession.currentUser?.fullName
-        ?: if (isDoctor) "Dra. Ana Martinez" else "Paciente"
-    val subtitle = if (isDoctor) "Medico General" else "Paciente"
+        ?: if (isDoctor) "Doctor" else if (isCaretaker) "Cuidador" else "Paciente"
+
+    val subtitle = when {
+        isDoctor    -> "Doctor"
+        isCaretaker -> "Cuidador"
+        else        -> "Paciente"
+    }
+
+    val headerColor = when {
+        isDoctor    -> AccentDoctor
+        isCaretaker -> AccentCaretaker
+        else        -> AccentPatient
+    }
+
+    val accentSoft = when {
+        isDoctor    -> AccentDoctorSoft
+        isCaretaker -> AccentCaretakerSoft
+        else        -> AccentPatientSoft
+    }
+
+    val accentIcon = when {
+        isDoctor    -> AccentDoctorIcon
+        isCaretaker -> AccentCaretakerIcon
+        else        -> AccentPatientIcon
+    }
+
+    val items = when {
+        isDoctor -> listOf(
+            DrawerItem("Mi Panel",        Icons.Filled.Home,             DrawerDestination.DOCTOR_PANEL),
+            DrawerItem("Mis Pacientes",   Icons.Outlined.Group,          DrawerDestination.DOCTOR_PATIENTS),
+            DrawerItem("Calendario",      Icons.Outlined.CalendarToday,  DrawerDestination.DOCTOR_CALENDAR),
+            DrawerItem("Reportes",        Icons.Outlined.Description,    DrawerDestination.DOCTOR_REPORTS),
+            DrawerItem("Configuración",   Icons.Outlined.Settings,       DrawerDestination.SETTINGS),
+            DrawerItem("Cerrar sesión",   Icons.Outlined.Logout,         DrawerDestination.LOGOUT, danger = true)
+        )
+        isCaretaker -> listOf(
+            DrawerItem("Mi Panel",        Icons.Filled.Home,             DrawerDestination.DOCTOR_PANEL),
+            DrawerItem("Mis Pacientes",   Icons.Outlined.Group,          DrawerDestination.DOCTOR_PATIENTS),
+            DrawerItem("Calendario",      Icons.Outlined.CalendarToday,  DrawerDestination.DOCTOR_CALENDAR),
+            DrawerItem("Medicamentos",    Icons.Outlined.MedicalServices,DrawerDestination.MEDICATIONS),
+            DrawerItem("Configuración",   Icons.Outlined.Settings,       DrawerDestination.SETTINGS),
+            DrawerItem("Cerrar sesión",   Icons.Outlined.Logout,         DrawerDestination.LOGOUT, danger = true)
+        )
+        else -> listOf(
+            DrawerItem("Signos Vitales",  Icons.Outlined.FavoriteBorder, DrawerDestination.DASHBOARD),
+            DrawerItem("Medicamentos",    Icons.Outlined.MedicalServices,DrawerDestination.MEDICATIONS),
+            DrawerItem("Reportes PDF",    Icons.Outlined.Description,    DrawerDestination.REPORTS),
+            DrawerItem("Mis Doctores",    Icons.Outlined.Group,          DrawerDestination.GROUPS),
+            DrawerItem("Mi Perfil",       Icons.Outlined.Person,         DrawerDestination.PROFILE),
+            DrawerItem("Configuración",   Icons.Outlined.Settings,       DrawerDestination.SETTINGS),
+            DrawerItem("Cerrar sesión",   Icons.Outlined.Logout,         DrawerDestination.LOGOUT, danger = true)
+        )
+    }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(DrawerSurface)
     ) {
-        DrawerHeader(name = name, subtitle = subtitle, showHospital = isDoctor)
+        DrawerHeader(
+            name        = name,
+            subtitle    = subtitle,
+            headerColor = headerColor,
+            showHospital = isDoctor
+        )
 
         Column(
             modifier = Modifier
@@ -81,32 +155,14 @@ fun RoleDrawerContent(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            val items = if (isDoctor) {
-                listOf(
-                    DrawerItem("Panel del Doctor", Icons.Outlined.Person, DrawerDestination.DOCTOR_PANEL),
-                    DrawerItem("Pacientes", Icons.Outlined.Person, DrawerDestination.DOCTOR_PANEL),
-                    DrawerItem("Calendario", Icons.Outlined.CalendarToday, DrawerDestination.DOCTOR_CALENDAR),
-                    DrawerItem("Reportes", Icons.Outlined.Description, DrawerDestination.DOCTOR_REPORTS),
-                    DrawerItem("Configuracion", Icons.Outlined.Settings, DrawerDestination.SETTINGS),
-                    DrawerItem("Cerrar sesion", Icons.Outlined.Logout, DrawerDestination.LOGOUT, danger = true)
-                )
-            } else {
-                listOf(
-                    DrawerItem("Signos Vitales", Icons.Outlined.FavoriteBorder, DrawerDestination.DASHBOARD),
-                    DrawerItem("Medicamentos", Icons.Outlined.MedicalServices, DrawerDestination.MEDICATIONS),
-                    DrawerItem("Reportes PDF", Icons.Outlined.Description, DrawerDestination.REPORTS),
-                    DrawerItem("Mis Doctores", Icons.Outlined.Group, DrawerDestination.GROUPS),
-                    DrawerItem("Mi Perfil", Icons.Outlined.Person, DrawerDestination.PROFILE),
-                    DrawerItem("Configuracion", Icons.Outlined.Settings, DrawerDestination.SETTINGS),
-                    DrawerItem("Cerrar sesion", Icons.Outlined.Logout, DrawerDestination.LOGOUT, danger = true)
-                )
-            }
-
             items.forEach { item ->
                 DrawerItemRow(
-                    item = item,
-                    selected = current == item.destination,
-                    onClick = { onItemClick(item.destination) }
+                    item        = item,
+                    selected    = current == item.destination,
+                    accentColor = headerColor,
+                    accentSoft  = accentSoft,
+                    accentIcon  = accentIcon,
+                    onClick     = { onItemClick(item.destination) }
                 )
             }
         }
@@ -114,11 +170,16 @@ fun RoleDrawerContent(
 }
 
 @Composable
-private fun DrawerHeader(name: String, subtitle: String, showHospital: Boolean) {
+private fun DrawerHeader(
+    name: String,
+    subtitle: String,
+    headerColor: Color,
+    showHospital: Boolean
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(DrawerGreen)
+            .background(headerColor)
             .padding(horizontal = 18.dp, vertical = 22.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -136,8 +197,8 @@ private fun DrawerHeader(name: String, subtitle: String, showHospital: Boolean) 
                 fontWeight = FontWeight.Bold
             )
         }
-        Text(name, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        Text(subtitle, color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Text(name,     color = Color.White,                    fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Text(subtitle, color = Color.White.copy(alpha = 0.85f),fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         if (showHospital) {
             Box(
                 modifier = Modifier
@@ -152,10 +213,21 @@ private fun DrawerHeader(name: String, subtitle: String, showHospital: Boolean) 
 }
 
 @Composable
-private fun DrawerItemRow(item: DrawerItem, selected: Boolean, onClick: () -> Unit) {
-    val background = if (selected) DrawerGreenSoft else Color.Transparent
-    val textColor = if (selected) DrawerGreen else if (item.danger) Color(0xFFD64545) else DrawerText
-    val iconBackground = if (selected) Color(0xFFCDEBDA) else Color(0xFFF1F2EE)
+private fun DrawerItemRow(
+    item: DrawerItem,
+    selected: Boolean,
+    accentColor: Color,
+    accentSoft: Color,
+    accentIcon: Color,
+    onClick: () -> Unit
+) {
+    val background  = if (selected) accentSoft else Color.Transparent
+    val textColor   = when {
+        item.danger -> Color(0xFFD64545)
+        selected    -> accentColor
+        else        -> DrawerText
+    }
+    val iconBg   = if (selected) accentIcon else Color(0xFFF1F2EE)
     val iconTint = if (item.danger) Color(0xFFD64545) else DrawerText
 
     Button(
@@ -174,7 +246,7 @@ private fun DrawerItemRow(item: DrawerItem, selected: Boolean, onClick: () -> Un
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(iconBackground),
+                    .background(iconBg),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(item.icon, contentDescription = item.label, tint = iconTint, modifier = Modifier.size(18.dp))
@@ -194,32 +266,31 @@ private data class DrawerItem(
 
 fun handleDrawerNavigation(context: Context, destination: DrawerDestination) {
     when (destination) {
-        DrawerDestination.DASHBOARD -> context.startActivity(Intent(context, DashboardActivity::class.java))
-        DrawerDestination.MEDICATIONS -> context.startActivity(Intent(context, CareActivity::class.java))
-        DrawerDestination.REPORTS -> Toast.makeText(context, "Reportes PDF pronto", Toast.LENGTH_SHORT).show()
-        DrawerDestination.GROUPS -> context.startActivity(Intent(context, GroupsActivity::class.java))
-        DrawerDestination.PROFILE -> Toast.makeText(context, "Perfil pronto", Toast.LENGTH_SHORT).show()
-        DrawerDestination.SETTINGS -> context.startActivity(Intent(context, SettingsActivity::class.java))
-        DrawerDestination.DOCTOR_PANEL -> context.startActivity(Intent(context, DoctorPatientsActivity::class.java))
-        DrawerDestination.DOCTOR_CALENDAR -> context.startActivity(Intent(context, CalendarActivity::class.java))
-        DrawerDestination.DOCTOR_REPORTS -> context.startActivity(Intent(context, ReportsActivity::class.java))
-        DrawerDestination.LOGOUT -> performLogout(context)
+        DrawerDestination.DASHBOARD        -> context.startActivity(Intent(context, DashboardActivity::class.java))
+        DrawerDestination.MEDICATIONS      -> context.startActivity(Intent(context, CareActivity::class.java))
+        DrawerDestination.REPORTS          -> Toast.makeText(context, "Reportes PDF pronto", Toast.LENGTH_SHORT).show()
+        DrawerDestination.GROUPS           -> context.startActivity(Intent(context, GroupsActivity::class.java))
+        DrawerDestination.PROFILE          -> Toast.makeText(context, "Perfil pronto", Toast.LENGTH_SHORT).show()
+        DrawerDestination.SETTINGS         -> context.startActivity(Intent(context, SettingsActivity::class.java))
+        DrawerDestination.DOCTOR_PANEL     -> context.startActivity(Intent(context, DoctorPatientsActivity::class.java))
+        DrawerDestination.DOCTOR_PATIENTS  -> context.startActivity(Intent(context, DoctorPatientsListActivity::class.java))
+        DrawerDestination.DOCTOR_CALENDAR  -> context.startActivity(Intent(context, CalendarActivity::class.java))
+        DrawerDestination.DOCTOR_REPORTS   -> context.startActivity(Intent(context, ReportsActivity::class.java))
+        DrawerDestination.LOGOUT           -> performLogout(context)
     }
 }
 
 fun performLogout(context: Context) {
-    PatientSession.accessToken = null
+    PatientSession.accessToken  = null
     PatientSession.refreshToken = null
-    PatientSession.currentUser = null
-    PatientSession.patientId = ""
-    PatientSession.resetCode = null
+    PatientSession.currentUser  = null
+    PatientSession.patientId    = ""
+    PatientSession.resetCode    = null
     val intent = Intent(context, LoginActivity::class.java).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
     }
     context.startActivity(intent)
-    if (context is ComponentActivity) {
-        context.finish()
-    }
+    if (context is ComponentActivity) context.finish()
 }
 
 private fun initialsOf(name: String): String {

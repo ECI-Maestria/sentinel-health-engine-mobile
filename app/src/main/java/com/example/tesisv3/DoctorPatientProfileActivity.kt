@@ -81,8 +81,6 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-// ── Activity ──────────────────────────────────────────────────────────────────
-
 class DoctorPatientProfileActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
@@ -109,8 +107,6 @@ class DoctorPatientProfileActivity : ComponentActivity() {
     }
 }
 
-// ── Colors ────────────────────────────────────────────────────────────────────
-
 private val ProfileBg          = Color(0xFFF3F7F4)
 private val ProfileText        = Color(0xFF2E3F35)
 private val ProfileMuted       = Color(0xFF7B8C81)
@@ -121,8 +117,6 @@ private val ProfileChipBg      = Color(0xFFE8F4EC)
 private val ProfileVitals      = Color(0xFF2F8A5B)
 private val ProfileVitalsDark  = Color(0xFF2A7C52)
 private val ProfileDivider     = Color(0xFFE6ECE7)
-
-// ── Data classes ──────────────────────────────────────────────────────────────
 
 private data class ProfileLatestVitals(
     val heartRate: Int,
@@ -166,7 +160,6 @@ private data class ProfileAlertStats(
     val low: Int
 )
 
-// ── Frequency helpers ─────────────────────────────────────────────────────────
 
 private val freqOptions = listOf(
     "ONCE_DAILY"        to "1 vez al día",
@@ -182,7 +175,6 @@ private fun freqLabel(value: String) =
     freqOptions.firstOrNull { it.first == value }?.second
         ?: value.replace("_", " ").lowercase(Locale.US).replaceFirstChar { it.uppercase() }
 
-// ── Main screen ───────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -197,7 +189,6 @@ private fun DoctorPatientProfileScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
 
-    // ── Latest vitals state
     var latestVitals       by remember { mutableStateOf<ProfileLatestVitals?>(null) }
     var vitalsLoading      by remember { mutableStateOf(false) }
 
@@ -208,24 +199,19 @@ private fun DoctorPatientProfileScreen(
         vitalsLoading = false
     }
 
-    // ── Medications state
     var medications        by remember { mutableStateOf<List<ProfileMedication>>(emptyList()) }
     var medLoading         by remember { mutableStateOf(false) }
     var showAddMed         by remember { mutableStateOf(false) }
 
-    // ── Appointments state
     var appointments       by remember { mutableStateOf<List<ProfileAppointment>>(emptyList()) }
     var apptLoading        by remember { mutableStateOf(false) }
 
-    // ── Caretakers state
     var caretakers         by remember { mutableStateOf<List<ProfileCaretaker>>(emptyList()) }
     var crtLoading         by remember { mutableStateOf(false) }
 
-    // ── Alerts state
     var alertStats         by remember { mutableStateOf<ProfileAlertStats?>(null) }
     var alertLoading       by remember { mutableStateOf(false) }
 
-    // Load data when tab or patientId changes
     LaunchedEffect(selectedTab, patientId) {
         if (patientId.isBlank()) return@LaunchedEffect
         when (selectedTab) {
@@ -265,7 +251,6 @@ private fun DoctorPatientProfileScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
-            // ── Top bar
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth().statusBarsPadding(),
@@ -284,7 +269,6 @@ private fun DoctorPatientProfileScreen(
                 }
             }
 
-            // ── Avatar + name
             item {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -308,7 +292,6 @@ private fun DoctorPatientProfileScreen(
                 }
             }
 
-            // ── Vitals card (real data)
             item {
                 Card(
                     shape = RoundedCornerShape(24.dp),
@@ -354,7 +337,6 @@ private fun DoctorPatientProfileScreen(
                 }
             }
 
-            // ── Tab selector
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ProfileTab("Medicamentos", selectedTab == 0) { selectedTab = 0 }
@@ -364,11 +346,9 @@ private fun DoctorPatientProfileScreen(
                 }
             }
 
-            // ── Tab content ──────────────────────────────────────────────────
 
             when (selectedTab) {
 
-                // ── MEDICAMENTOS ─────────────────────────────────────────────
                 0 -> {
                     if (medLoading) {
                         item { Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) { CircularProgressIndicator(color = ProfileAccent) } }
@@ -415,18 +395,20 @@ private fun DoctorPatientProfileScreen(
                             }
                         }
                     }
-                    item {
-                        Button(
-                            onClick = { showAddMed = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = ProfileAccent),
-                            shape = RoundedCornerShape(18.dp),
-                            contentPadding = PaddingValues(vertical = 14.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text("+ Agregar Medicamento", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+                    val isCaretakerRole = PatientSession.currentUser?.role?.equals("CARETAKER", ignoreCase = true) == true
+                    if (!isCaretakerRole) {
+                        item {
+                            Button(
+                                onClick = { showAddMed = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = ProfileAccent),
+                                shape = RoundedCornerShape(18.dp),
+                                contentPadding = PaddingValues(vertical = 14.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("+ Agregar Medicamento", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+                        }
                     }
                 }
 
-                // ── CITAS ────────────────────────────────────────────────────
                 1 -> {
                     if (apptLoading) {
                         item { Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) { CircularProgressIndicator(color = ProfileAccent) } }
@@ -469,7 +451,6 @@ private fun DoctorPatientProfileScreen(
                     }
                 }
 
-                // ── CUIDADORES ───────────────────────────────────────────────
                 2 -> {
                     if (crtLoading) {
                         item { Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) { CircularProgressIndicator(color = ProfileAccent) } }
@@ -510,7 +491,6 @@ private fun DoctorPatientProfileScreen(
                     }
                 }
 
-                // ── ALERTAS ──────────────────────────────────────────────────
                 3 -> {
                     if (alertLoading) {
                         item { Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) { CircularProgressIndicator(color = ProfileAccent) } }
@@ -548,7 +528,6 @@ private fun DoctorPatientProfileScreen(
         }
     }
 
-    // ── Add medication bottom sheet
     if (showAddMed) {
         AddProfileMedSheet(
             patientId = patientId,
@@ -564,8 +543,6 @@ private fun DoctorPatientProfileScreen(
         )
     }
 }
-
-// ── Add Medication Bottom Sheet ───────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -621,7 +598,6 @@ private fun AddProfileMedSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // Frequency dropdown
             Box {
                 OutlinedTextField(
                     value = freqLabel(frequency), onValueChange = {},
@@ -640,7 +616,6 @@ private fun AddProfileMedSheet(
                 }
             }
 
-            // Scheduled times
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -660,7 +635,6 @@ private fun AddProfileMedSheet(
                 Text(scheduledTimes.joinToString(", "), color = ProfileAccent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
 
-            // Dates
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = startDate, onValueChange = {},
@@ -726,7 +700,6 @@ private fun AddProfileMedSheet(
         }
     }
 
-    // Time picker dialog
     if (showTimePicker) {
         Dialog(onDismissRequest = { showTimePicker = false }) {
             androidx.compose.material3.Surface(
@@ -751,8 +724,6 @@ private fun AddProfileMedSheet(
         }
     }
 }
-
-// ── Reusable composables ──────────────────────────────────────────────────────
 
 @Composable
 private fun ProfileStatusBadge(label: String, textColor: Color, background: Color) {
@@ -819,8 +790,6 @@ private fun AlertStatRow(label: String, value: String, textColor: Color, badgeBg
         ) { Text(value, color = textColor, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
     }
 }
-
-// ── API functions ─────────────────────────────────────────────────────────────
 
 private fun fetchProfileMedications(patientId: String): List<ProfileMedication> {
     return try {

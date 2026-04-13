@@ -337,7 +337,9 @@ private fun GroupsTopBar(wearableConnected: Boolean?, onMenu: () -> Unit) {
             Text(text = "+", color = GroupsText, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            WatchStatusIcon(wearableConnected = wearableConnected)
+            if (PatientSession.currentUser?.role?.equals("PATIENT", ignoreCase = true) == true) {
+                WatchStatusIcon(wearableConnected = wearableConnected)
+            }
             IconButton(onClick = {
                 context.startActivity(Intent(context, NotificationsActivity::class.java))
             }) {

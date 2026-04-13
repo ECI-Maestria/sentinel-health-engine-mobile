@@ -90,6 +90,7 @@ import java.util.UUID
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import org.json.JSONArray
 import org.json.JSONObject
 
 class CalendarActivity : ComponentActivity() {
@@ -139,13 +140,14 @@ private fun CalendarScreen(onBack: () -> Unit) {
     var feedbackSuccess by remember { mutableStateOf(true) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     var wearableConnected by remember { mutableStateOf<Boolean?>(null) }
-    val isDoctor = PatientSession.currentUser?.role?.equals("DOCTOR", ignoreCase = true) == true
+    val isDoctor    = PatientSession.currentUser?.role?.equals("DOCTOR",    ignoreCase = true) == true
+    val isCaretaker = PatientSession.currentUser?.role?.equals("CARETAKER", ignoreCase = true) == true
 
     LaunchedEffect(Unit) {
         wearableConnected = withContext(Dispatchers.IO) { isWearableConnected(context) }
     }
     LaunchedEffect(Unit) {
-        if (isDoctor) {
+        if (isDoctor || isCaretaker) {
             val result = withContext(Dispatchers.IO) { fetchPatientsList() }
             patients = result
             selectedPatient = result.firstOrNull()
@@ -198,7 +200,7 @@ private fun CalendarScreen(onBack: () -> Unit) {
             ) {
             item { CalendarTopBar(wearableConnected = wearableConnected, onMenu = { scope.launch { drawerState.open() } }) }
 
-            if (isDoctor) {
+            if (isDoctor || isCaretaker) {
                 item {
                     PatientPickerCard(
                         label = "Paciente",
@@ -276,7 +278,8 @@ private fun CalendarScreen(onBack: () -> Unit) {
                         title = item.title,
                         detail = formatDateTime(item.scheduledAtMillis),
                         onClick = { editingAppointment = item.toEntity() },
-                        onDelete = { deletingAppointment = item.toEntity() }
+                        onDelete = { deletingAppointment = item.toEntity() },
+                        showDelete = isDoctor
                     )
                 }
             }
@@ -315,7 +318,7 @@ private fun CalendarScreen(onBack: () -> Unit) {
                         dao.update(entity)
                     }
                     val scheduledAt = toUtcIsoString(cal.timeInMillis)
-                    val targetPatientId = if (isDoctor) {
+                    val targetPatientId = if (isDoctor || isCaretaker) {
                         selectedPatient?.id ?: PatientSession.patientId
                     } else {
                         PatientSession.patientId
@@ -393,7 +396,9 @@ private fun CalendarTopBar(wearableConnected: Boolean?, onMenu: () -> Unit) {
             Icon(Icons.Outlined.EventNote, contentDescription = "Brand", tint = CalendarNav)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            WatchStatusIcon(wearableConnected = wearableConnected)
+            if (PatientSession.currentUser?.role?.equals("PATIENT", ignoreCase = true) == true) {
+                WatchStatusIcon(wearableConnected = wearableConnected)
+            }
             IconButton(onClick = {
                 context.startActivity(Intent(context, NotificationsActivity::class.java))
             }) {
@@ -548,7 +553,8 @@ private fun AppointmentCard(
     title: String,
     detail: String,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    showDelete: Boolean = true
 ) {
     Surface(
         shape = RoundedCornerShape(18.dp),
@@ -580,13 +586,15 @@ private fun AppointmentCard(
             }
 
             Spacer(Modifier.weight(1f))
-            Card(
-                shape = CircleShape,
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFE8E8)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-            ) {
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = Color(0xFFCC6A63))
+            if (showDelete) {
+                Card(
+                    shape = CircleShape,
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFE8E8)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                ) {
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = Color(0xFFCC6A63))
+                    }
                 }
             }
         }
@@ -1020,9 +1028,14 @@ private fun escapeJson(value: String): String {
 private fun fetchPatientsList(): List<UserProfile> {
     val token = PatientSession.accessToken
     if (token.isNullOrBlank()) return emptyList()
-    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients")
+    val isCaretaker = PatientSession.currentUser?.role?.equals("CARETAKER", ignoreCase = true) == true
+    val urlStr = if (isCaretaker) {
+        "https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/caretakers/me/patients"
+    } else {
+        "https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients"
+    }
     return try {
-        val conn = (url.openConnection() as HttpURLConnection).apply {
+        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 10000
             readTimeout = 10000
@@ -1031,24 +1044,50 @@ private fun fetchPatientsList(): List<UserProfile> {
         val code = conn.responseCode
         val body = readStreamString(if (code in 200..299) conn.inputStream else conn.errorStream)
         conn.disconnect()
-        if (code !in 200..299) return emptyList()
-        val json = JSONObject(body)
-        val array = json.optJSONArray("patients") ?: return emptyList()
+        if (code !in 200..299 || body.isBlank()) return emptyList()
         val list = mutableListOf<UserProfile>()
-        for (i in 0 until array.length()) {
-            val item = array.optJSONObject(i) ?: continue
-            list.add(
-                UserProfile(
-                    id = item.optString("id"),
-                    email = item.optString("email"),
-                    role = item.optString("role"),
-                    firstName = item.optString("firstName"),
-                    lastName = item.optString("lastName"),
-                    fullName = item.optString("fullName"),
-                    isActive = item.optBoolean("isActive", true),
-                    createdAt = item.optString("createdAt")
+        if (isCaretaker) {
+            val arr = when {
+                body.trimStart().startsWith("[") -> JSONArray(body)
+                else -> JSONObject(body).let { o ->
+                    o.optJSONArray("patients") ?: o.optJSONArray("data") ?: JSONArray()
+                }
+            }
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                val p = item.optJSONObject("patient") ?: item
+                val id = item.optString("patientId").ifBlank { p.optString("id") }
+                if (id.isBlank()) continue
+                list.add(
+                    UserProfile(
+                        id = id,
+                        email = p.optString("email"),
+                        role = p.optString("role"),
+                        firstName = p.optString("firstName"),
+                        lastName = p.optString("lastName"),
+                        fullName = p.optString("fullName").ifBlank { null },
+                        isActive = p.optBoolean("isActive", true),
+                        createdAt = p.optString("createdAt")
+                    )
                 )
-            )
+            }
+        } else {
+            val array = JSONObject(body).optJSONArray("patients") ?: return emptyList()
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                list.add(
+                    UserProfile(
+                        id = item.optString("id"),
+                        email = item.optString("email"),
+                        role = item.optString("role"),
+                        firstName = item.optString("firstName"),
+                        lastName = item.optString("lastName"),
+                        fullName = item.optString("fullName"),
+                        isActive = item.optBoolean("isActive", true),
+                        createdAt = item.optString("createdAt")
+                    )
+                )
+            }
         }
         list
     } catch (_: Exception) {

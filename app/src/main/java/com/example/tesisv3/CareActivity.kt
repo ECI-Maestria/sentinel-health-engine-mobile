@@ -123,8 +123,9 @@ private fun CareScreen(onBack: () -> Unit) {
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
     var feedbackSuccess by remember { mutableStateOf(true) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val canEdit = PatientSession.currentUser?.role?.equals("PATIENT", ignoreCase = true) != true
-    val isDoctor = PatientSession.currentUser?.role?.equals("DOCTOR", ignoreCase = true) == true
+    val isDoctor    = PatientSession.currentUser?.role?.equals("DOCTOR",    ignoreCase = true) == true
+    val isCaretaker = PatientSession.currentUser?.role?.equals("CARETAKER", ignoreCase = true) == true
+    val canEdit = isDoctor
     var patients by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var selectedPatient by remember { mutableStateOf<UserProfile?>(null) }
     var patientExpanded by remember { mutableStateOf(false) }
@@ -138,7 +139,7 @@ private fun CareScreen(onBack: () -> Unit) {
         wearableConnected = withContext(Dispatchers.IO) { isWearableConnected(context) }
     }
     LaunchedEffect(Unit) {
-        if (isDoctor) {
+        if (isDoctor || isCaretaker) {
             val result = withContext(Dispatchers.IO) { fetchPatientsList() }
             patients = result
             selectedPatient = result.firstOrNull()
@@ -195,7 +196,7 @@ private fun CareScreen(onBack: () -> Unit) {
             ) {
                 item { CareTopBar(wearableConnected = wearableConnected, onMenu = { scope.launch { drawerState.open() } }) }
 
-                if (isDoctor) {
+                if (isDoctor || isCaretaker) {
                     item {
                         PatientPickerCard(
                             label = "Paciente",
@@ -283,7 +284,7 @@ private fun CareScreen(onBack: () -> Unit) {
                 existing = editingItem,
                 onSave = { newItem ->
                     scope.launch {
-                        val targetPatientId = if (isDoctor) {
+                        val targetPatientId = if (isDoctor || isCaretaker) {
                             selectedPatient?.id ?: PatientSession.patientId
                         } else {
                             PatientSession.patientId
@@ -383,7 +384,9 @@ private fun CareTopBar(wearableConnected: Boolean?, onMenu: () -> Unit) {
             Icon(Icons.Outlined.MedicalServices, contentDescription = "Brand", tint = CareNav)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            WatchStatusIcon(wearableConnected = wearableConnected)
+            if (PatientSession.currentUser?.role?.equals("PATIENT", ignoreCase = true) == true) {
+                WatchStatusIcon(wearableConnected = wearableConnected)
+            }
             IconButton(onClick = {
                 context.startActivity(Intent(context, NotificationsActivity::class.java))
             }) {
@@ -656,9 +659,14 @@ private fun buildMedicationPayload(medication: ApiMedication): String {
 private fun fetchPatientsList(): List<UserProfile> {
     val token = PatientSession.accessToken
     if (token.isNullOrBlank()) return emptyList()
-    val url = URL("https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients")
+    val isCaretaker = PatientSession.currentUser?.role?.equals("CARETAKER", ignoreCase = true) == true
+    val urlStr = if (isCaretaker) {
+        "https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/caretakers/me/patients"
+    } else {
+        "https://user-service.yellowmeadow-4dfba13a.centralus.azurecontainerapps.io/v1/patients"
+    }
     return try {
-        val conn = (url.openConnection() as HttpURLConnection).apply {
+        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 10000
             readTimeout = 10000
@@ -667,24 +675,50 @@ private fun fetchPatientsList(): List<UserProfile> {
         val code = conn.responseCode
         val body = readStreamString(if (code in 200..299) conn.inputStream else conn.errorStream)
         conn.disconnect()
-        if (code !in 200..299) return emptyList()
-        val json = JSONObject(body)
-        val array = json.optJSONArray("patients") ?: return emptyList()
+        if (code !in 200..299 || body.isBlank()) return emptyList()
         val list = mutableListOf<UserProfile>()
-        for (i in 0 until array.length()) {
-            val item = array.optJSONObject(i) ?: continue
-            list.add(
-                UserProfile(
-                    id = item.optString("id"),
-                    email = item.optString("email"),
-                    role = item.optString("role"),
-                    firstName = item.optString("firstName"),
-                    lastName = item.optString("lastName"),
-                    fullName = item.optString("fullName"),
-                    isActive = item.optBoolean("isActive", true),
-                    createdAt = item.optString("createdAt")
+        if (isCaretaker) {
+            val arr = when {
+                body.trimStart().startsWith("[") -> JSONArray(body)
+                else -> JSONObject(body).let { o ->
+                    o.optJSONArray("patients") ?: o.optJSONArray("data") ?: JSONArray()
+                }
+            }
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                val p = item.optJSONObject("patient") ?: item
+                val id = item.optString("patientId").ifBlank { p.optString("id") }
+                if (id.isBlank()) continue
+                list.add(
+                    UserProfile(
+                        id = id,
+                        email = p.optString("email"),
+                        role = p.optString("role"),
+                        firstName = p.optString("firstName"),
+                        lastName = p.optString("lastName"),
+                        fullName = p.optString("fullName").ifBlank { null },
+                        isActive = p.optBoolean("isActive", true),
+                        createdAt = p.optString("createdAt")
+                    )
                 )
-            )
+            }
+        } else {
+            val array = JSONObject(body).optJSONArray("patients") ?: return emptyList()
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                list.add(
+                    UserProfile(
+                        id = item.optString("id"),
+                        email = item.optString("email"),
+                        role = item.optString("role"),
+                        firstName = item.optString("firstName"),
+                        lastName = item.optString("lastName"),
+                        fullName = item.optString("fullName"),
+                        isActive = item.optBoolean("isActive", true),
+                        createdAt = item.optString("createdAt")
+                    )
+                )
+            }
         }
         list
     } catch (_: Exception) {
