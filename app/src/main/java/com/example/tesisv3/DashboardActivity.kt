@@ -96,6 +96,17 @@ import java.time.temporal.ChronoUnit
 import java.util.Calendar
 import java.util.Locale
 import javax.net.ssl.HttpsURLConnection
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.DisposableEffect
+import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -236,9 +247,58 @@ private fun DashboardScreen(onBack: () -> Unit, liveVitals: MutableState<DashVit
     var historyDebug by remember { mutableStateOf<HistoryDebugInfo?>(null) }
     var showHistoryDebug by remember { mutableStateOf(false) }
     var wearableConnected by remember { mutableStateOf<Boolean?>(null) }
+    var steps by remember { mutableStateOf<Int?>(null) }
+    var initialSteps by remember { mutableStateOf<Int?>(null) }
+    
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { isGranted ->
+            if (isGranted) {
+                // Permission granted, sensor will automatically start through DisposableEffect
+            }
+        }
+    )
 
     LaunchedEffect(Unit) {
         wearableConnected = withContext(Dispatchers.IO) { isWearableConnected(context) }
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACTIVITY_RECOGNITION
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val stepSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+
+        val stepListener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                event?.let {
+                    val currentSteps = it.values[0].toInt()
+                    steps = currentSteps
+                }
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+
+        if (stepSensor != null) {
+            sensorManager.registerListener(
+                stepListener,
+                stepSensor,
+                SensorManager.SENSOR_DELAY_UI
+            )
+        }
+
+        onDispose {
+            sensorManager.unregisterListener(stepListener)
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -316,7 +376,7 @@ private fun DashboardScreen(onBack: () -> Unit, liveVitals: MutableState<DashVit
                         onMenu = { scope.launch { drawerState.open() } }
                     )
                 }
-                item { VitalsCard(vitals = vitals) }
+                item { VitalsCard(vitals = vitals, currentSteps = steps) }
                 item {
                     VitalsHistoryCard(
                         points = vitalsHistory,
@@ -493,7 +553,7 @@ private fun DashTopBar(
 }
 
 @Composable
-private fun VitalsCard(vitals: DashVitals?) {
+private fun VitalsCard(vitals: DashVitals?, currentSteps: Int?) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -532,10 +592,10 @@ private fun VitalsCard(vitals: DashVitals?) {
                 val bpHigh = (vitals?.bpSystolic ?: 0) > 140
                 VitalItem(
                     modifier = Modifier.weight(1f),
-                    label = "📌 PA",
-                    value = vitals?.bpSystolic?.toString() ?: "—",
-                    unit = vitals?.bpDiastolic?.let { "/$it" } ?: "",
-                    highlight = bpHigh
+                    label = "📌 Pasos",
+                    value = currentSteps?.toString() ?: "—",
+                    unit = "",
+                    highlight = false
                 )
                 VitalItem(
                     modifier = Modifier.weight(1f),
