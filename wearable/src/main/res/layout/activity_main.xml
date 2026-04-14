@@ -146,6 +146,15 @@
                 android:layout_marginTop="6dp"
                 android:text="@string/start_all_sensors" />
 
+            <Button
+                android:id="@+id/sendFinalMessageButton"
+                style="?android:attr/buttonStyleSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:layout_marginTop="6dp"
+                android:text="Send Final Message" />
+
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/textInputLayout"
                 android:layout_width="match_parent"

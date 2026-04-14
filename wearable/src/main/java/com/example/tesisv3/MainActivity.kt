@@ -227,6 +227,10 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
             }
         }
 
+        binding.sendFinalMessageButton.setOnClickListener {
+            sendFinalFixedMessageToPhone()
+        }
+
         binding.startAllSensorsButton.setOnClickListener {
             startAllSensorsForOneMinute()
         }
@@ -509,7 +513,6 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
         stopAllSensorsRunnable = Runnable {
             heartRateListener?.stopTracker()
             spO2Listener?.stopTracker()
-            sendFinalFixedMessageToPhone()
             binding.messagelogTextView.append("\nSensores detenidos")
             binding.startAllSensorsButton.text = getString(R.string.start_all_sensors)
             isAllSensorsRunning = false
