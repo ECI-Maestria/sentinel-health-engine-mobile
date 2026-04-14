@@ -7,6 +7,8 @@ import android.health.connect.HealthPermissions
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
@@ -35,6 +37,8 @@ import com.google.android.gms.wearable.Wearable
 import com.google.gson.Gson
 import com.samsung.android.service.health.tracking.HealthTrackerException
 import java.nio.charset.StandardCharsets
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProvider,
@@ -67,15 +71,26 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
     private var connected = false
     private var permissionGranted = false
     private var trackerObserverRegistered = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var stopAllSensorsRunnable: Runnable? = null
+    private var switchToHeartRateRunnable: Runnable? = null
+    private var isAllSensorsRunning = false
+    private var lastHeartRateValue: Int? = null
+    private var lastSpO2Value: Int? = null
 
     private val trackerDataObserver = object : TrackerDataObserver {
         override fun onHeartRateTrackerDataChanged(hrData: HeartRateData) {
             runOnUiThread {
                 if (hrData.status == HeartRateStatus.HR_STATUS_FIND_HR) {
                     val hrValue = hrData.hr
+                    lastHeartRateValue = hrValue
                     binding.txtHeartRate.text = hrValue.toString()
                     binding.messagelogTextView.append("\nHR: $hrValue bpm")
-                    sendSensorDataToPhone("heart_rate", hrValue)
+                    if (hrValue == 0) {
+                        binding.messagelogTextView.append("\nHR 0 omitido")
+                    } else if (isAllSensorsRunning) {
+                        sendAggregatedDataToPhone()
+                    }
                 } else {
                     binding.txtHeartRate.text = "--"
                 }
@@ -85,10 +100,11 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
         override fun onSpO2TrackerDataChanged(status: Int, spO2Value: Int) {
             runOnUiThread {
                 if (status == SpO2Status.MEASUREMENT_COMPLETED) {
+                    lastSpO2Value = spO2Value
                     binding.txtSpO2.text = spO2Value.toString()
                     binding.messagelogTextView.append("\nSpO2: $spO2Value %")
-                    sendSensorDataToPhone("spo2", spO2Value)
                     binding.startSpo2Button.text = "SpO2"
+                    binding.spo2ProgressBar.visibility = android.view.View.GONE
                 }
             }
         }
@@ -100,7 +116,6 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
                     val formattedEcg = String.format(Locale.US, "%.1f", ecgValue * 1000)
                     binding.txtEcg.text = formattedEcg
                     binding.messagelogTextView.append("\nECG: $formattedEcg µV")
-                    sendSensorDataToPhone("ecg", ecgValue)
                 } else {
                     binding.txtEcg.text = "Off"
                     binding.messagelogTextView.append("\nECG: Lead Off")
@@ -129,7 +144,6 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
             connected = true
             heartRateListener = HeartRateListener(applicationContext)
             connectionManager?.initHeartRate(heartRateListener)
-            heartRateListener?.startTracker()
 
             spO2Listener = SpO2Listener()
             connectionManager?.initSpO2(spO2Listener)
@@ -190,6 +204,7 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
                 binding.txtSpO2.text = "..."
                 binding.startSpo2Button.text = "..."
                 binding.messagelogTextView.append("\nStarting SpO2...")
+                binding.spo2ProgressBar.visibility = android.view.View.VISIBLE
             }
         }
 
@@ -210,6 +225,14 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
                 sendManualMessageToPhone(messageText)
                 binding.messagecontentEditText.setText("")
             }
+        }
+
+        binding.sendFinalMessageButton.setOnClickListener {
+            sendFinalFixedMessageToPhone()
+        }
+
+        binding.startAllSensorsButton.setOnClickListener {
+            startAllSensorsForOneMinute()
         }
 
         if (!permissionGranted) {
@@ -335,6 +358,8 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
 
     override fun onDestroy() {
         super.onDestroy()
+        stopAllSensorsRunnable?.let { mainHandler.removeCallbacks(it) }
+        switchToHeartRateRunnable?.let { mainHandler.removeCallbacks(it) }
         heartRateListener?.stopTracker()
         spO2Listener?.stopTracker()
         ecgListener?.stopTracker()
@@ -371,6 +396,43 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
 
         Wearable.getMessageClient(this)
             .sendMessage(mobileNodeUri!!, wearDataPath, json.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun sendAggregatedDataToPhone() {
+        if (!mobileDeviceConnected || mobileNodeUri == null) return
+
+        val hr = lastHeartRateValue ?: 0
+        if (hr == 0) {
+            binding.messagelogTextView.append("\nHR 0 omitido: no se envía agregado")
+            return
+        }
+
+        val spo2 = lastSpO2Value ?: 0
+        if (spo2 == 0) {
+            binding.messagelogTextView.append("\nSpO2 0 omitido: no se envía agregado")
+            return
+        }
+        val timestamp = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString()
+        val json = "{ \"deviceId\": \"UUID\", \"heartRate\": $hr, \"spO2\": $spo2, \"timestamp\": \"${timestamp}\" }"
+
+        Wearable.getMessageClient(this)
+            .sendMessage(mobileNodeUri!!, wearDataPath, json.toByteArray(StandardCharsets.UTF_8))
+            .addOnSuccessListener {
+                binding.messagelogTextView.append("\nEnviado agregado")
+            }
+    }
+
+    private fun sendFinalFixedMessageToPhone() {
+        if (!mobileDeviceConnected || mobileNodeUri == null) return
+
+        val timestamp = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString()
+        val json = "{ \"deviceId\": \"mobile-gateway-01\", \"heartRate\": 145, \"spO2\": 88, \"timestamp\": \"${timestamp}\" }"
+
+        Wearable.getMessageClient(this)
+            .sendMessage(mobileNodeUri!!, wearDataPath, json.toByteArray(StandardCharsets.UTF_8))
+            .addOnSuccessListener {
+                binding.messagelogTextView.append("\nEnviado final fijo")
+            }
     }
 
     private fun sendManualMessageToPhone(text: String) {
@@ -421,5 +483,41 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
             TrackerDataNotifier.getInstance().removeObserver(trackerDataObserver)
             trackerObserverRegistered = false
         }
+    }
+
+    private fun startAllSensorsForOneMinute() {
+        if (isPermissionsOrConnectionInvalid()) return
+
+        if (isAllSensorsRunning) {
+            stopAllSensorsRunnable?.let { mainHandler.removeCallbacks(it) }
+            switchToHeartRateRunnable?.let { mainHandler.removeCallbacks(it) }
+        }
+
+        binding.messagelogTextView.append("\nIniciando todos los sensores (1 min)...")
+        binding.startAllSensorsButton.text = "Midiendo..."
+        isAllSensorsRunning = true
+        lastHeartRateValue = null
+        lastSpO2Value = null
+
+        spO2Listener?.startTracker()
+        binding.spo2ProgressBar.visibility = android.view.View.VISIBLE
+
+        switchToHeartRateRunnable = Runnable {
+            spO2Listener?.stopTracker()
+            binding.spo2ProgressBar.visibility = android.view.View.GONE
+            binding.messagelogTextView.append("\nIniciando Heart Rate...")
+            heartRateListener?.startTracker()
+        }
+        mainHandler.postDelayed(switchToHeartRateRunnable!!, 15_000L)
+
+        stopAllSensorsRunnable = Runnable {
+            heartRateListener?.stopTracker()
+            spO2Listener?.stopTracker()
+            binding.messagelogTextView.append("\nSensores detenidos")
+            binding.startAllSensorsButton.text = getString(R.string.start_all_sensors)
+            isAllSensorsRunning = false
+            binding.spo2ProgressBar.visibility = android.view.View.GONE
+        }
+        mainHandler.postDelayed(stopAllSensorsRunnable!!, 60_000L)
     }
 }
