@@ -76,6 +76,12 @@ android {
         kotlinCompilerExtensionVersion = "1.5.15"
     }
 
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
+
     packaging {
         jniLibs {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -111,6 +117,8 @@ dependencies {
     implementation(libs.google.android.material)
     implementation(libs.androidx.constraintlayout)
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20240303")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     implementation(libs.glide)
     kapt(libs.glide.compiler)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -119,6 +127,7 @@ dependencies {
     implementation(libs.androidx.compose.material3.windowsize)
     implementation(libs.androidx.compose.material3.windowsize)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)

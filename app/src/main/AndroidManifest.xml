@@ -17,7 +17,7 @@
         tools:ignore="GoogleAppIndexingWarning">
 
         <activity
-            android:name=".LoginActivity"
+            android:name=".ui.LoginActivity"
             android:exported="true"
             android:resizeableActivity="true"
             tools:targetApi="n">
@@ -28,109 +28,109 @@
         </activity>
 
         <activity
-            android:name=".SettingsActivity"
+            android:name=".ui.SettingsActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".NotificationsActivity"
+            android:name=".ui.NotificationsActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".CareActivity"
+            android:name=".ui.CareActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".CalendarActivity"
+            android:name=".ui.CalendarActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".GroupsActivity"
+            android:name=".ui.GroupsActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".DashboardActivity"
+            android:name=".ui.DashboardActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".DoctorPatientsActivity"
+            android:name=".ui.DoctorPatientsActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".DoctorPatientsListActivity"
+            android:name=".ui.DoctorPatientsListActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".ReportsActivity"
+            android:name=".ui.ReportsActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".CaretakerRegistrationActivity"
+            android:name=".ui.CaretakerRegistrationActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".CaretakerNoPatientsActivity"
+            android:name=".ui.CaretakerNoPatientsActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".ForgotPasswordActivity"
+            android:name=".ui.ForgotPasswordActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".DoctorPatientProfileActivity"
+            android:name=".ui.DoctorPatientProfileActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".VerifyResetCodeActivity"
+            android:name=".ui.VerifyResetCodeActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".ResetPasswordActivity"
+            android:name=".ui.ResetPasswordActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".PatientRegistrationActivity"
+            android:name=".ui.PatientRegistrationActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".DoctorRegistrationActivity"
+            android:name=".ui.DoctorRegistrationActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.MainActivity"
             android:exported="false"
             android:resizeableActivity="true"
             tools:targetApi="n" />
