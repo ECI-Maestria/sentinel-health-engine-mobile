@@ -1,5 +1,6 @@
-package com.example.tesisv3
+package com.example.tesisv3.ui.activities
 
+import com.example.tesisv3.R
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
