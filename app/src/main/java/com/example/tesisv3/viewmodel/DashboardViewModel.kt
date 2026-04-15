@@ -306,10 +306,11 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun fetchVitalsHistory(patientId: String): HistoryDebugInfo {
         val to = LocalDate.now()
+        val fixedTo = to.plusDays(1)
         val from = to.minusDays(29)
         val fmt = DateTimeFormatter.ISO_LOCAL_DATE
         val urlStr = "${ApiConstants.ANALYTICS_SERVICE}/v1/patients/$patientId/vitals/history" +
-                "?from=${from.format(fmt)}&to=${to.format(fmt)}"
+                "?from=${from.format(fmt)}&to=${fixedTo.format(fmt)}"
         if (patientId.isBlank()) {
             return HistoryDebugInfo(urlStr, -1, "", "patientId vacío", emptyList())
         }
