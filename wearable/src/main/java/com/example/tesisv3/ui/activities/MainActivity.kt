@@ -106,6 +106,23 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
                     binding.messagelogTextView.append("\nSpO2: $spO2Value %")
                     binding.startSpo2Button.text = "SpO2"
                     binding.spo2ProgressBar.visibility = android.view.View.GONE
+
+                    if (isAllSensorsRunning) {
+                        // SpO2 completado → cambiar a FC por 30 segundos --> de ptra forma deja el Spo2 en 0
+                        spO2Listener?.stopTracker()
+                        binding.messagelogTextView.append("\nIniciando Heart Rate (30s)...")
+                        binding.startAllSensorsButton.text = "Midiendo FC..."
+                        heartRateListener?.startTracker()
+
+                        stopAllSensorsRunnable?.let { mainHandler.removeCallbacks(it) }
+                        stopAllSensorsRunnable = Runnable {
+                            heartRateListener?.stopTracker()
+                            binding.messagelogTextView.append("\nSensores detenidos")
+                            binding.startAllSensorsButton.text = getString(R.string.start_all_sensors)
+                            isAllSensorsRunning = false
+                        }
+                        mainHandler.postDelayed(stopAllSensorsRunnable!!, 30_000L)
+                    }
                 }
             }
         }
@@ -492,33 +509,19 @@ class MainActivity : AppCompatActivity(), AmbientModeSupport.AmbientCallbackProv
         if (isAllSensorsRunning) {
             stopAllSensorsRunnable?.let { mainHandler.removeCallbacks(it) }
             switchToHeartRateRunnable?.let { mainHandler.removeCallbacks(it) }
+            heartRateListener?.stopTracker()
+            spO2Listener?.stopTracker()
         }
 
-        binding.messagelogTextView.append("\nIniciando todos los sensores (1 min)...")
-        binding.startAllSensorsButton.text = "Midiendo..."
+        binding.messagelogTextView.append("\nIniciando SpO2...")
+        binding.startAllSensorsButton.text = "Midiendo SpO2..."
         isAllSensorsRunning = true
         lastHeartRateValue = null
         lastSpO2Value = null
 
+        // Fase 1: SpO2 corre hasta MEASUREMENT_COMPLETED
+        // Fase 2: al completarse, onSpO2TrackerDataChanged arranca FC por 30s
         spO2Listener?.startTracker()
         binding.spo2ProgressBar.visibility = android.view.View.VISIBLE
-
-        switchToHeartRateRunnable = Runnable {
-            spO2Listener?.stopTracker()
-            binding.spo2ProgressBar.visibility = android.view.View.GONE
-            binding.messagelogTextView.append("\nIniciando Heart Rate...")
-            heartRateListener?.startTracker()
-        }
-        mainHandler.postDelayed(switchToHeartRateRunnable!!, 15_000L)
-
-        stopAllSensorsRunnable = Runnable {
-            heartRateListener?.stopTracker()
-            spO2Listener?.stopTracker()
-            binding.messagelogTextView.append("\nSensores detenidos")
-            binding.startAllSensorsButton.text = getString(R.string.start_all_sensors)
-            isAllSensorsRunning = false
-            binding.spo2ProgressBar.visibility = android.view.View.GONE
-        }
-        mainHandler.postDelayed(stopAllSensorsRunnable!!, 60_000L)
     }
 }

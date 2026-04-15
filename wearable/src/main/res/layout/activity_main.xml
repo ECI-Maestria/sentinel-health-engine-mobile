@@ -4,163 +4,293 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?CardBGColor"
-    android:padding="9dp"
-    tools:deviceIds="wear">
+    android:background="@color/sentinel_bg"
+    tools:deviceIds="wear_round">
 
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         app:layout_box="all"
-        android:fillViewport="true">
+        android:fillViewport="true"
+        android:scrollbars="none">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            tools:context=".activities.MainActivity">
+            android:paddingHorizontal="10dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="16dp"
+            tools:context=".ui.activities.MainActivity">
+
+            <!-- ═══════════════════════════════════════ -->
+            <!--             TÍTULO PRINCIPAL            -->
+            <!-- ═══════════════════════════════════════ -->
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/sentinel_title"
+                android:textColor="@color/sentinel_green_title"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:lineSpacingMultiplier="1.1"
+                android:layout_marginBottom="8dp" />
+
+            <!-- ═══════════════════════════════════════ -->
+            <!--            CARD SIGNOS VITALES          -->
+            <!-- ═══════════════════════════════════════ -->
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:background="@drawable/vitals_card_bg"
+                android:paddingHorizontal="12dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="12dp"
+                android:layout_marginBottom="8dp">
 
+                <!-- Header: icono corazón + "Signos Vitales" -->
                 <LinearLayout
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="6dp"
-                    android:gravity="center"
-                    android:orientation="vertical">
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="8dp">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:src="@drawable/ic_heart_outline"
+                        android:contentDescription="@null" />
 
                     <TextView
-                        android:id="@+id/txtHeartRate"
-                        android:layout_width="wrap_content"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:text="0"
-                        android:textColor="@android:color/holo_red_light"
-                        android:textSize="24sp"
-                        android:textStyle="bold" />
+                        android:layout_weight="1"
+                        android:text="@string/signos_vitales"
+                        android:textColor="@color/sentinel_white"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:gravity="center" />
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="BPM"
-                        android:textSize="8sp" />
                 </LinearLayout>
 
+                <!-- Fila de valores: FC | SpO2 | ECG -->
                 <LinearLayout
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="6dp"
-                    android:gravity="center"
-                    android:orientation="vertical">
+                    android:orientation="horizontal"
+                    android:gravity="center">
 
-                    <TextView
-                        android:id="@+id/txtSpO2"
-                        android:layout_width="wrap_content"
+                    <!-- FC -->
+                    <LinearLayout
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:text="0"
-                        android:textColor="@android:color/holo_blue_light"
-                        android:textSize="24sp"
-                        android:textStyle="bold" />
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="center">
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="SpO2 %"
-                        android:textSize="8sp" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="FC"
+                            android:textColor="@color/sentinel_salmon"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
 
-                    <ProgressBar
-                        android:id="@+id/spo2ProgressBar"
-                        style="?android:attr/progressBarStyleSmall"
-                        android:layout_width="wrap_content"
+                        <TextView
+                            android:id="@+id/txtHeartRate"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="0"
+                            android:textColor="@color/sentinel_salmon"
+                            android:textSize="26sp"
+                            android:textStyle="bold" />
+
+                    </LinearLayout>
+
+                    <!-- SpO2 -->
+                    <LinearLayout
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:indeterminate="true"
-                        android:visibility="gone" />
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="center">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="SpO2"
+                            android:textColor="@color/sentinel_blue"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/txtSpO2"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="0"
+                            android:textColor="@color/sentinel_blue"
+                            android:textSize="26sp"
+                            android:textStyle="bold" />
+
+                        <ProgressBar
+                            android:id="@+id/spo2ProgressBar"
+                            style="?android:attr/progressBarStyleSmall"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:indeterminate="true"
+                            android:visibility="gone" />
+
+                    </LinearLayout>
+
+                    <!-- ECG -->
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="center">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="ECG"
+                            android:textColor="@color/sentinel_green"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/txtEcg"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="0"
+                            android:textColor="@color/sentinel_green"
+                            android:textSize="26sp"
+                            android:textStyle="bold" />
+
+                    </LinearLayout>
+
                 </LinearLayout>
 
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:gravity="center"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:id="@+id/txtEcg"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="--"
-                        android:textColor="@android:color/holo_green_light"
-                        android:textSize="20sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="ECG"
-                        android:textSize="8sp" />
-                </LinearLayout>
             </LinearLayout>
 
+            <!-- ═══════════════════════════════════════ -->
+            <!--         BOTÓN: MEDIR FC Y SpO2          -->
+            <!-- ═══════════════════════════════════════ -->
+
+            <Button
+                android:id="@+id/startAllSensorsButton"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:text="@string/start_all_sensors"
+                android:textColor="@color/sentinel_white"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:background="@drawable/btn_rounded_green"
+                android:layout_marginBottom="6dp"
+                android:stateListAnimator="@null" />
+
+            <!-- ═══════════════════════════════════════ -->
+            <!--         BOTÓN: ENVIAR ALERTA            -->
+            <!-- ═══════════════════════════════════════ -->
+
+            <Button
+                android:id="@+id/sendFinalMessageButton"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:text="@string/send_alert"
+                android:textColor="@color/sentinel_white"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:background="@drawable/btn_rounded_salmon"
+                android:layout_marginBottom="6dp"
+                android:stateListAnimator="@null" />
+
+            <!-- ═══════════════════════════════════════ -->
+            <!--        BOTONES: SpO2  |  ECG            -->
+            <!-- ═══════════════════════════════════════ -->
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:orientation="horizontal"
+                android:layout_marginBottom="12dp">
+
+                <Button
+                    android:id="@+id/startSpo2Button"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:text="@string/SpO2"
+                    android:textColor="@color/sentinel_white"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:background="@drawable/btn_rounded_blue"
+                    android:stateListAnimator="@null" />
+
+                <Button
+                    android:id="@+id/startEcgButton"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:text="ECG"
+                    android:textColor="@color/sentinel_white"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:background="@drawable/btn_rounded_green"
+                    android:stateListAnimator="@null" />
+
+            </LinearLayout>
+
+            <!-- ═══════════════════════════════════════ -->
+            <!--    SEPARADOR — scroll hacia abajo       -->
+            <!-- ═══════════════════════════════════════ -->
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/more_options"
+                android:textColor="@color/sentinel_muted"
+                android:textSize="9sp"
+                android:gravity="center"
+                android:layout_marginBottom="10dp"
+                tools:ignore="SmallSp" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/sentinel_divider"
+                android:layout_marginBottom="12dp" />
+
+            <!-- ═══════════════════════════════════════ -->
+            <!--     SECCIÓN SECUNDARIA (scroll abajo)   -->
+            <!-- ═══════════════════════════════════════ -->
+
+            <!-- Log de mensajes / estado de sensores -->
             <TextView
                 android:id="@+id/messagelogTextView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:paddingStart="9dp"
-                android:paddingEnd="9dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
                 android:text="@string/init"
-                android:textColor="?TextViewHeaderColor"
-                android:textSize="12sp" />
+                android:textColor="@color/sentinel_muted"
+                android:textSize="11sp" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:gravity="center"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/startSpo2Button"
-                    style="?android:attr/buttonStyleSmall"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="SpO2" />
-
-                <Button
-                    android:id="@+id/startEcgButton"
-                    style="?android:attr/buttonStyleSmall"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="ECG" />
-            </LinearLayout>
-
-            <Button
-                android:id="@+id/startAllSensorsButton"
-                style="?android:attr/buttonStyleSmall"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginTop="6dp"
-                android:text="@string/start_all_sensors" />
-
-            <Button
-                android:id="@+id/sendFinalMessageButton"
-                style="?android:attr/buttonStyleSmall"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginTop="6dp"
-                android:text="Send Final Message" />
-
+            <!-- Campo de mensaje libre -->
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/textInputLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:hint="@string/message"
-                android:visibility="visible">
+                android:layout_marginBottom="6dp">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/messagecontentEditText"
@@ -170,26 +300,34 @@
                     android:maxLines="1"
                     android:textSize="11sp"
                     tools:ignore="SmallSp" />
+
             </com.google.android.material.textfield.TextInputLayout>
 
+            <!-- Enviar mensaje de texto al móvil -->
             <Button
                 android:id="@+id/sendmessageButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
                 android:text="@string/send_message_to_phone"
-                android:visibility="visible" />
+                android:textColor="@color/sentinel_white"
+                android:textSize="11sp"
+                android:background="@drawable/btn_rounded_green"
+                android:layout_marginBottom="8dp"
+                android:stateListAnimator="@null"
+                tools:ignore="SmallSp" />
 
+            <!-- Estado de conexión con el móvil -->
             <TextView
                 android:id="@+id/deviceconnectionStatusTv"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
                 android:text="@string/mobile_device_is_connected"
-                android:textColor="?TextViewHeaderColor"
+                android:textColor="@color/sentinel_muted"
                 android:textSize="10sp"
-                android:visibility="visible"
                 tools:ignore="SmallSp" />
+
         </LinearLayout>
     </ScrollView>
+
 </androidx.wear.widget.BoxInsetLayout>
