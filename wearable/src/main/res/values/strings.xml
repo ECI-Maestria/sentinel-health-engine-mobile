@@ -1,5 +1,6 @@
 <resources>
-    <string name="app_name">Tesis</string>
+    <string name="app_name">Sentinel Health</string>
+    <string name="sentinel_title">Sentinel\nHealth</string>
     <string name="hello_world">Hello Square World!</string>
     <string name="mobile_device_is_connected">Mobile device not paired</string>
     <string name="mobile_message">Mobile message</string>
@@ -8,7 +9,10 @@
     <string name="message_log">Message log</string>
     <string name="init">...</string>
     <string name="send_message_to_phone">Send Message to Phone</string>
-    <string name="start_all_sensors">Medir todo 1 min</string>
+    <string name="start_all_sensors">Medir FC y SpO2</string>
+    <string name="send_alert">Enviar Alerta</string>
+    <string name="signos_vitales">Signos Vitales</string>
+    <string name="more_options">── más opciones ──</string>
     <!--
    Sensor
    -->
