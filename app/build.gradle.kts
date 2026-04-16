@@ -49,6 +49,7 @@ android {
         debug {
             isDebuggable = true
             isMinifyEnabled = false
+            enableUnitTestCoverage = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
